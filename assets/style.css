@@ -1,0 +1,126 @@
+/* LOAMP's hi-fi futurist skin. Adwaita still owns the colour scheme and widget
+ * semantics; these translucent surfaces work in both light and dark modes. */
+
+@define-color loamp_cyan #38d9d0;
+@define-color loamp_orange #ff7a3d;
+@define-color loamp_ink rgba(10, 14, 22, 0.76);
+
+.loamp-header {
+  background-image: linear-gradient(90deg, alpha(@loamp_cyan, 0.08), transparent 35%, alpha(@loamp_orange, 0.08));
+  border-bottom: 1px solid alpha(@loamp_cyan, 0.22);
+}
+
+.loamp-now-playing {
+  padding: 12px;
+  border-radius: 22px;
+  border: 1px solid alpha(@loamp_cyan, 0.16);
+  background-image: linear-gradient(145deg, alpha(@loamp_cyan, 0.055), transparent 45%, alpha(@loamp_orange, 0.05));
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.12);
+}
+
+.loamp-kicker {
+  color: @loamp_cyan;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 2px;
+}
+
+.loamp-microcopy {
+  opacity: 0.42;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.loamp-sidebar {
+  background-color: alpha(@window_bg_color, 0.72);
+  border-right: 1px solid alpha(@loamp_cyan, 0.14);
+}
+
+.loamp-sidebar-heading {
+  padding: 14px 12px 10px;
+  border-bottom: 1px solid alpha(currentColor, 0.08);
+}
+
+.loamp-queue row {
+  margin: 2px 6px;
+  border-radius: 8px;
+  transition: background-color 160ms ease;
+}
+
+.loamp-queue row:hover { background-color: alpha(@loamp_cyan, 0.08); }
+.loamp-queue row:selected {
+  background-color: alpha(@loamp_cyan, 0.18);
+  box-shadow: inset 3px 0 @loamp_cyan;
+}
+
+.loamp-track-info { padding: 2px 14px 8px; }
+
+.loamp-artwork-deck {
+  margin: 8px 0 12px;
+  padding: 10px;
+  border-radius: 18px;
+  background-color: alpha(@loamp_ink, 0.36);
+  border: 1px solid alpha(@loamp_cyan, 0.22);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.22), inset 0 0 0 1px alpha(white, 0.035);
+}
+
+/* Album art reads as a physical sleeve rather than a floating rectangle. */
+.loamp-artwork {
+  border-radius: 12px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+}
+
+.loamp-track-details { margin-bottom: 2px; }
+.loamp-track-details .title-2 { letter-spacing: -0.5px; }
+
+.loamp-chip {
+  margin-top: 5px;
+  padding: 3px 9px;
+  border-radius: 99px;
+  border: 1px solid alpha(currentColor, 0.12);
+  background-color: alpha(currentColor, 0.04);
+}
+
+.loamp-console {
+  padding: 14px 16px 12px;
+  border-radius: 16px;
+  background-color: alpha(@loamp_ink, 0.54);
+  color: #e9f5f4;
+  border: 1px solid alpha(@loamp_cyan, 0.24);
+  box-shadow: 0 9px 24px rgba(0, 0, 0, 0.2), inset 0 1px alpha(white, 0.06);
+}
+
+.loamp-status {
+  color: alpha(currentColor, 0.45);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+
+.loamp-console.is-playing .loamp-status {
+  color: @loamp_orange;
+  text-shadow: 0 0 8px alpha(@loamp_orange, 0.55);
+}
+
+.loamp-console button.circular { min-width: 38px; min-height: 38px; }
+.loamp-console button.loamp-play {
+  min-width: 52px;
+  min-height: 52px;
+  background-image: linear-gradient(135deg, @loamp_cyan, #27a9c7);
+  color: #071313;
+  box-shadow: 0 5px 16px alpha(@loamp_cyan, 0.3);
+}
+
+.loamp-progress trough { min-height: 5px; border-radius: 99px; }
+.loamp-progress highlight { background-image: linear-gradient(90deg, @loamp_cyan, @loamp_orange); }
+.loamp-volume-value { min-width: 34px; color: alpha(currentColor, 0.62); font-size: 10px; }
+
+.loamp-library { background-color: alpha(@window_bg_color, 0.82); }
+.loamp-search { margin: 3px; }
+
+/* Time readouts should not jitter as the digits change. */
+.numeric {
+  font-feature-settings: "tnum";
+  font-variant-numeric: tabular-nums;
+}

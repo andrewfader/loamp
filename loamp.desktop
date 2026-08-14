@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=LOAMP
+GenericName=Music Player
+Comment=Linux Open Audio Music Player
+Exec=/home/andrew/workspace/loamp/loamp.rb
+Icon=/home/andrew/workspace/loamp/assets/icon.png
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+MimeType=audio/mpeg;audio/flac;audio/ogg;audio/wav;audio/mp4;audio/x-m4a;
+StartupNotify=true
+StartupWMClass=loamp

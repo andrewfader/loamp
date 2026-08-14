@@ -1,0 +1,97 @@
+# RuboCop configuration for LOAMP
+
+plugins:
+  - rubocop-performance
+  - rubocop-rspec
+
+AllCops:
+  TargetRubyVersion: 3.2
+  NewCops: enable
+  Exclude:
+    - '.ruby-lsp/**/*'
+    - 'coverage/**/*'
+    - 'spec/**/*'
+    - 'test_*.rb'
+    - 'vendor/**/*'
+    - 'tmp/**/*'
+  SuggestExtensions: false
+
+# Layout
+Layout/LineLength:
+  Max: 100
+  AllowedPatterns: ['\A\s*#']
+
+Layout/MultilineMethodCallIndentation:
+  EnforcedStyle: indented
+
+# Style
+Style/Documentation:
+  Enabled: false
+
+Style/FrozenStringLiteralComment:
+  Enabled: true
+
+Style/StringLiterals:
+  EnforcedStyle: single_quotes
+
+Style/TrailingCommaInArguments:
+  EnforcedStyleForMultiline: comma
+
+Style/TrailingCommaInArrayLiteral:
+  EnforcedStyleForMultiline: comma
+
+Style/TrailingCommaInHashLiteral:
+  EnforcedStyleForMultiline: comma
+
+# Metrics
+Metrics/BlockLength:
+  Exclude:
+    - 'spec/**/*'
+    - 'Rakefile'
+
+Metrics/ClassLength:
+  Max: 350
+
+Metrics/MethodLength:
+  Max: 40
+
+Metrics/AbcSize:
+  Max: 55
+
+Metrics/CyclomaticComplexity:
+  Max: 12
+
+Metrics/PerceivedComplexity:
+  Max: 12
+
+# Naming
+Naming/PredicatePrefix:
+  ForbiddenPrefixes:
+    - is_
+
+Naming/AccessorMethodName:
+  Enabled: false
+
+Naming/PredicateMethod:
+  Enabled: false
+
+Style/FormatStringToken:
+  Enabled: false
+
+# RSpec specific
+RSpec/ExampleLength:
+  Max: 10
+
+RSpec/MultipleExpectations:
+  Max: 5
+
+RSpec/NestedGroups:
+  Max: 4
+
+RSpec/DescribeClass:
+  Exclude:
+    - 'spec/integration_test.rb'
+
+# Performance
+Performance/StringReplacement:
+  Enabled: true

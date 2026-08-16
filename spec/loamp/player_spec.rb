@@ -184,6 +184,14 @@ RSpec.describe Loamp::Player do
 
       expect(player.current_track).to eq(playlist[0])
     end
+
+    it 'restarts the first track rather than stopping' do
+      play_and_settle
+      player.previous_track
+
+      expect(player.current_track).to eq(playlist[0])
+      expect(player).not_to be_stopped
+    end
   end
 
   describe '#volume' do

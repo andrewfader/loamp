@@ -15,9 +15,16 @@ module Loamp
       end
 
       def add_node(id, label: id, local: false)
-        @nodes[id] ||= Node.new(id: id, label: label, x: @random.rand * 400,
-                                y: @random.rand * 300, vx: 0, vy: 0,
-                                pinned: false, local: local)
+        node = @nodes[id]
+        if node
+          node.label = label if better_label?(node, id, label)
+          node.local = true if local
+          return node
+        end
+
+        @nodes[id] = Node.new(id: id, label: label, x: @random.rand * 400,
+                              y: @random.rand * 300, vx: 0, vy: 0,
+                              pinned: false, local: local)
       end
 
       def add_edge(from, to, weight: 1)
@@ -74,6 +81,10 @@ module Loamp
 
         right.vx -= x_force
         right.vy -= y_force
+      end
+
+      def better_label?(node, id, label)
+        !label.to_s.empty? && label != id && (node.label.to_s.empty? || node.label == id)
       end
     end
   end

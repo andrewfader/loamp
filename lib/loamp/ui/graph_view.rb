@@ -11,6 +11,8 @@ module Loamp
         @similarity = similarity
         @layout = Radio::GraphLayout.new
         @callbacks = {}
+        @pending = Hash.new(0)
+        @labels = {}
         @scale = 1.0
         @offset_x = 0
         @offset_y = 0
@@ -21,32 +23,52 @@ module Loamp
       def on_start_station(&block) = (@callbacks[:start_station] = block)
       def on_feedback(&block) = (@callbacks[:feedback] = block)
       def on_adventure_changed(&block) = (@callbacks[:adventure] = block)
+      def on_now_playing(&block) = (@callbacks[:now_playing] = block)
 
       def seed(artist, mbid: nil, local: true)
-        id = mbid || artist
-        @labels ||= {}
-        @labels[id] = artist
-        @layout.add_node(id, label: artist, local: local)
-        expand(id, artist: artist, mbid: mbid)
+        name = artist.to_s.strip
+        return if name.empty?
+
+        id = mbid || name
+        @layout = Radio::GraphLayout.new
+        @labels = { id => name }
+        node = @layout.add_node(id, label: name, local: local)
+        node.x = 200
+        node.y = 150
+        node.pinned = true
+        @focus = name
+        set_status("Looking up artists similar to #{name}…")
+        @spinner.start
+        expand(id, artist: name, mbid: mbid)
       end
 
       def shutdown
         @shutdown = true
-        @generation = (@generation || 0) + 1
+        @pending.clear
+        @spinner&.stop
       end
 
       private
 
       def build_toolbar
-        entry = Gtk::Entry.new
-        entry.placeholder_text = 'Enter an artist to explore similar artists'
-        entry.hexpand = true
-        entry.signal_connect('activate') { seed(entry.text) unless entry.text.to_s.strip.empty? }
+        @entry = Gtk::Entry.new
+        @entry.placeholder_text = 'Search for an artist'
+        @entry.hexpand = true
+        @entry.signal_connect('activate') { seed(@entry.text) unless @entry.text.to_s.strip.empty? }
+
+        @now_playing_button = Gtk::Button.new(label: 'This track')
+        @now_playing_button.tooltip_text = 'Show artists similar to what is playing'
+        @now_playing_button.signal_connect('clicked') { @callbacks[:now_playing]&.call }
+
+        @spinner = Gtk::Spinner.new
+
         box = Gtk::Box.new(:horizontal, 6)
         box.margin_top = 12
         box.margin_start = 12
         box.margin_end = 12
-        box.append(entry)
+        box.append(@entry)
+        box.append(@now_playing_button)
+        box.append(@spinner)
         %i[up down ban].each do |action|
           button = Gtk::Button.new(label: FEEDBACK_LABELS[action])
           button.signal_connect('clicked') { @callbacks[:feedback]&.call(action) }
@@ -60,6 +82,14 @@ module Loamp
         end
         box.append(adventure)
         append(box)
+
+        @status = Gtk::Label.new(idle_status)
+        @status.xalign = 0
+        @status.wrap = true
+        @status.add_css_class('dim-label')
+        @status.margin_start = 12
+        @status.margin_end = 12
+        append(@status)
       end
 
       def build_canvas
@@ -85,8 +115,9 @@ module Loamp
           if presses == 2
             @callbacks[:start_station]&.call(node.label, node.id)
           else
-            expand(node.id,
-                   artist: node.label)
+            set_status("Looking up artists similar to #{node.label}…")
+            @spinner.start
+            expand(node.id, artist: node.label, mbid: mbid_for(node.id))
           end
         end
         @canvas.add_controller(click)
@@ -122,19 +153,31 @@ module Loamp
       end
 
       def expand(id, artist:, mbid: nil)
-        generation = @generation = (@generation || 0) + 1
+        generation = @pending[id] += 1
         Thread.new do
           edges = @similarity.expand(artist: artist, mbid: mbid || mbid_for(id))
-          GLib::Idle.add { apply_edges(generation, id, edges) }
+          GLib::Idle.add { apply_edges(generation, id, artist, edges) }
         end
       end
 
-      def apply_edges(generation, seed, edges)
-        return false if @shutdown || generation != @generation
+      def apply_edges(generation, seed, artist, edges)
+        return false if @shutdown || @pending[seed] != generation
 
-        edges.first(40).each do |target, weight|
+        @spinner.stop
+        edges.first(40).each do |target, weight, name|
+          label = name.to_s.empty? ? (@labels[target] || target) : name
+          @labels[target] = label
+          local = @similarity.respond_to?(:local?) && @similarity.local?(target, label)
+          @layout.add_node(target, label: label, local: local)
           @layout.add_edge(seed, target, weight: weight)
         end
+        count = edges.length
+        @status.text = if count.positive?
+                         "#{count} artists similar to #{artist}. " \
+                           'Click a node to expand it, double-click to start a station.'
+                       else
+                         "No similar artists found for #{artist}."
+                       end
         false
       end
 
@@ -144,6 +187,8 @@ module Loamp
         @layout.edges.each do |edge|
           left = screen(@layout.nodes[edge.from], width, height)
           right = screen(@layout.nodes[edge.to], width, height)
+          next unless left && right
+
           context.move_to(*left)
           context.line_to(*right)
           context.stroke
@@ -153,6 +198,8 @@ module Loamp
 
       def draw_node(context, node, width, height)
         x_position, y_position = screen(node, width, height)
+        return unless x_position
+
         if node.local
           context.set_source_rgb(0.2, 0.65, 0.9)
         else
@@ -166,6 +213,8 @@ module Loamp
       end
 
       def screen(node, width, height)
+        return unless node
+
         [((node.x + @offset_x - 200) * @scale) + (width / 2),
          ((node.y + @offset_y - 150) * @scale) + (height / 2)]
       end
@@ -175,12 +224,22 @@ module Loamp
         height = @canvas.allocated_height
         @layout.nodes.values.find do |node|
           sx, sy = screen(node, width, height)
+          next unless sx
+
           ((sx - x_position)**2) + ((sy - y_position)**2) <= NODE_RADIUS**2
         end
       end
 
       def mbid_for(id)
         id if id.to_s.match?(Metadata::MBID)
+      end
+
+      def set_status(text)
+        @status.text = text
+      end
+
+      def idle_status
+        'Play a song and click Similar artists, or search for an artist above.'
       end
     end
   end

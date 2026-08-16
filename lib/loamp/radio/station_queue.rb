@@ -57,7 +57,9 @@ module Loamp
       end
 
       def artist_candidates(tracks)
-        @similarity_weights = @graph.neighbours(@seed).to_h
+        @similarity_weights = @graph.neighbours(@seed).to_h do |target, weight, *|
+          [target, weight]
+        end
         names = [@seed, *@similarity_weights.keys]
         selected = tracks.select do |track|
           names.include?(track.artist) || names.include?(track.musicbrainz_artist_id)

@@ -115,10 +115,12 @@ class StubHttpServer
   def status_text(status)
     case status
     when 200 then 'OK'
+    when 206 then 'Partial Content'
     when 301 then 'Moved Permanently'
     when 302 then 'Found'
     when 307 then 'Temporary Redirect'
     when 404 then 'Not Found'
+    when 416 then 'Range Not Satisfiable'
     when 503 then 'Service Unavailable'
     else 'Status'
     end

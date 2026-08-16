@@ -168,6 +168,7 @@ module Loamp
 
       def watch_playback
         @player.on_position_changed do |position, _duration|
+          next if @shutdown
           next unless @current_episode && position - @last_position_write >= POSITION_WRITE_INTERVAL
 
           @store.remember_position(@current_episode.guid, position)

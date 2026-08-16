@@ -142,12 +142,18 @@ module Loamp
         @add_file_button = build_button('list-add-symbolic', 'Add Files') { open_file_dialog }
         @header_bar.pack_start(@add_file_button)
 
-        @add_folder_button = build_button('folder-open-symbolic', 'Add Folder') do
+        @add_folder_button = build_button('folder-open-symbolic', add_folder_tooltip) do
           open_folder_dialog
         end
         @header_bar.pack_start(@add_folder_button)
 
         @header_bar.pack_end(build_menu_button)
+        return unless @radio_services
+
+        @header_bar.pack_end(build_button('system-search-symbolic',
+                                          'Similar to current track') do
+                                            discover_similar(@player.current_track)
+                                          end)
       end
 
       def build_button(icon_name, tooltip, &)
@@ -296,7 +302,7 @@ module Loamp
         group.add_action(build_action('about') { show_about_dialog })
         group.add_action(build_action('rescan') { rescan_library }) if @library
         group.add_action(build_action('show-radio') { show_view('radio') }) if @radio_view
-        group.add_action(build_action('show-discovery') { show_view('discovery') }) if @graph_view
+        group.add_action(build_action('show-discovery') { show_discovery }) if @graph_view
         PlaybackMenu.install_actions(group, @player)
         insert_action_group('win', group)
       end
@@ -354,7 +360,7 @@ module Loamp
 
       def open_folder_dialog
         dialog = Gtk::FileDialog.new
-        dialog.title = 'Add Music Folder'
+        dialog.title = @library ? 'Add Music Folder to Library' : 'Add Music Folder'
 
         dialog.select_folder(self) do |source, result|
           folder = source.select_folder_finish(result)
@@ -365,8 +371,17 @@ module Loamp
       end
 
       def add_folder(folder)
+        path = folder.path
+        return queue_folder(path) unless @library_view
+
+        show_view('library')
+        started = @library_view.index_folder(path)
+        notify(started ? "Indexing #{File.basename(path)}" : 'A library scan is already running')
+      end
+
+      def queue_folder(path)
         before = @playlist.size
-        @playlist.add_directory(folder.path)
+        @playlist.add_directory(path)
         @playlist_view.refresh
         notify("Added #{@playlist.size - before} tracks")
       end
@@ -380,12 +395,15 @@ module Loamp
         notify('Playlist cleared')
       end
 
-      # Re-reads every folder already in the index, which is how a library
-      # catches up with files added outside the player.
+      def add_folder_tooltip
+        @library ? 'Add Folder to Library' : 'Add Folder'
+      end
+
       def rescan_library
-        folders = @library.paths.map { |path| File.dirname(path) }.uniq
+        folders = @library.watch_folders
         return notify('The library is empty — add a folder first') if folders.empty?
 
+        show_view('library')
         notify('Rescanning the library')
         @library_view.scan(folders)
       end

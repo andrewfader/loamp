@@ -208,6 +208,17 @@ RSpec.describe Loamp::UI::LibraryView do
       expect(view.visible_tracks.size).to eq(1)
     end
 
+    it 'remembers the folder so a later rescan can find new files' do
+      FileUtils.cp(AudioFixtures.sample_mp3, File.join(root, 'a.mp3'))
+      message = nil
+      view.on_notify { |text| message = text }
+
+      view.index_folder(root)
+      pump_main_loop { !message.nil? }
+
+      expect(library.watch_folders).to eq([File.expand_path(root)])
+    end
+
     it 'says so when there was nothing new' do
       message = nil
       view.on_notify { |text| message = text }

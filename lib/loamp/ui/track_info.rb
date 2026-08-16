@@ -21,10 +21,16 @@ module Loamp
       def initialize
         super(:vertical, 12)
         add_css_class('loamp-track-info')
+        @callbacks = {}
 
         create_widgets
         layout_widgets
         clear
+      end
+
+      def on_discover(&block)
+        @callbacks[:discover] = block
+        @similar_button.visible = true
       end
 
       def update_track(track)
@@ -37,6 +43,7 @@ module Loamp
 
         update_track_number(track)
         update_artwork(track)
+        @similar_button.sensitive = !track.artist.to_s.strip.empty?
       end
 
       def update_stream_metadata(metadata)
@@ -61,6 +68,7 @@ module Loamp
         @album_label.text = ''
         @duration_label.text = ''
         @track_number_label.hide
+        @similar_button.sensitive = false
         show_placeholder_art
       end
 
@@ -153,6 +161,13 @@ module Loamp
         @track_number_label = build_label('caption', 'dim-label')
         @duration_label = build_label('caption', 'dim-label')
 
+        @similar_button = Gtk::Button.new(label: 'Similar artists')
+        @similar_button.tooltip_text = 'Find artists similar to this track'
+        @similar_button.halign = :center
+        @similar_button.visible = false
+        @similar_button.sensitive = false
+        @similar_button.signal_connect('clicked') { @callbacks[:discover]&.call(@showing) }
+
         @details_box = Gtk::Box.new(:vertical, 4)
         @details_box.add_css_class('loamp-track-details')
       end
@@ -199,6 +214,7 @@ module Loamp
           metadata.append(label)
         end
         @details_box.append(metadata)
+        @details_box.append(@similar_button)
 
         append(@details_box)
       end

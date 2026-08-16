@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'spec_helper'
+require 'fileutils'
 
 RSpec.describe Loamp::UI::MainWindow do
   before(:each) do
@@ -100,12 +101,76 @@ RSpec.describe Loamp::UI::MainWindow do
       expect(stack.pages.n_items).to eq(4)
     end
 
+    it 'adds podcast, streaming and discover pages when those services are present' do
+      store = Loamp::Podcast::Store.new(path: ':memory:')
+      similarity = instance_double(Loamp::Radio::Similarity, expand: [])
+      graph = Loamp::Radio::GraphStore.new(path: ':memory:')
+      registry = Loamp::Provider::Registry.new
+      registry.register(:music, Loamp::Provider::Base.new)
+      library.add(AudioFixtures.tone(seconds: 1, name: 'seed.wav'),
+                  metadata: Loamp::Metadata.new(artist: 'Seed Artist', title: 'Seed'))
+
+      window = build_window(player, playlist, library: library,
+                                             podcasts: [store, instance_double(Loamp::Podcast::Client)],
+                                             providers: registry,
+                                             radio_services: [similarity, graph])
+
+      expect(window.instance_variable_get(:@podcast_view)).to be_a(Loamp::UI::PodcastView)
+      expect(window.instance_variable_get(:@provider_view)).to be_a(Loamp::UI::ProviderView)
+      expect(window.instance_variable_get(:@graph_view)).to be_a(Loamp::UI::GraphView)
+      graph.close
+      store.close
+    end
+
+    it 'seeds Discover from the playing track in one action' do
+      graph = Loamp::Radio::GraphStore.new(path: ':memory:')
+      similarity = instance_double(Loamp::Radio::Similarity, expand: [], local?: false)
+      window = build_window(player, playlist, library: library,
+                                             radio_services: [similarity, graph])
+      track = AudioFixtures.track_with(artist: 'Radiohead', title: 'Airbag',
+                                       musicbrainz_artist_id: AudioFixtures::MUSICBRAINZ_ARTIST_ID)
+      playlist.append(track)
+      playlist.set_current_track(0)
+
+      window.send(:discover_similar, track)
+
+      expect(window.instance_variable_get(:@view_stack).visible_child_name).to eq('discovery')
+      node = window.instance_variable_get(:@graph_view).instance_variable_get(:@layout)
+        .nodes[AudioFixtures::MUSICBRAINZ_ARTIST_ID]
+      expect(node.label).to eq('Radiohead')
+      graph.close
+    end
+
     it 'refreshes the playlist pane when the library queues something' do
       view = with_library.instance_variable_get(:@library_view)
       playlist_view = with_library.instance_variable_get(:@playlist_view)
 
       expect(playlist_view).to receive(:refresh)
       view.send(:announce_playlist_change)
+    end
+
+    it 'starts and steers a themed station from Discover' do
+      8.times do |index|
+        library.add(AudioFixtures.tone(seconds: 1, name: "seed-#{index}.wav"),
+                    metadata: Loamp::Metadata.new(artist: "Artist #{index}", title: "T#{index}",
+                                                  album: "A#{index}"))
+      end
+      graph = Loamp::Radio::GraphStore.new(path: ':memory:')
+      window = build_window(player, playlist, library: library,
+                                             radio_services: [
+                                               instance_double(Loamp::Radio::Similarity, expand: []),
+                                               graph,
+                                             ])
+      allow(player).to receive(:play)
+
+      window.send(:start_themed_station, 'Artist 0', nil)
+      expect(playlist.size).to be_positive
+
+      window.send(:steer_station, :up)
+      window.send(:steer_station, :down)
+      window.send(:steer_station, :ban)
+      window.send(:refill_station_queue)
+      graph.close
     end
   end
 
@@ -188,10 +253,9 @@ RSpec.describe Loamp::UI::MainWindow do
       expect(result).to be(false)
     end
 
-    it 'handles key combinations correctly' do
-      # Test that modifier state is properly checked
-      result = main_window.send(:handle_key_press, Gdk::Keyval::KEY_Right, Gdk::ModifierType::SHIFT_MASK)
-      expect(result).to be(true) # Should be handled as normal right arrow (seek)
+    it 'toggles mute from the M key' do
+      expect(player).to receive(:muted=).with(true)
+      expect(main_window.send(:handle_key_press, Gdk::Keyval::KEY_m, 0)).to be(true)
     end
   end
 
@@ -332,6 +396,79 @@ RSpec.describe Loamp::UI::MainWindow do
       expect(add_folder_button).to be_a(Gtk::Button)
       expect(add_file_button.icon_name).to eq('list-add-symbolic')
       expect(add_folder_button.icon_name).to eq('folder-open-symbolic')
+      expect(add_folder_button.tooltip_text).to eq('Add Folder')
+    end
+  end
+
+  describe 'adding a folder' do
+    let(:library) { Loamp::Library.new(path: Loamp::Library::IN_MEMORY) }
+    let(:folder) do
+      dir = File.join(AudioFixtures.fixture_dir, "add-folder-#{SecureRandom.hex(4)}")
+      FileUtils.mkdir_p(dir)
+      @folder = dir
+    end
+
+    after do
+      library.close
+      FileUtils.rm_rf(@folder) if @folder
+    end
+
+    def pump_main_loop(timeout: 20)
+      context = GLib::MainContext.default
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
+
+      until yield || Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+        context.iteration(false)
+        sleep 0.01
+      end
+    end
+
+    def selected_folder(path)
+      Struct.new(:path).new(path)
+    end
+
+    it 'indexes into the library instead of only queuing the playlist' do
+      FileUtils.cp(AudioFixtures.sample_mp3, File.join(folder, 'a.mp3'))
+      window = build_window(player, playlist, library: library)
+
+      window.send(:add_folder, selected_folder(folder))
+      pump_main_loop { library.count == 1 }
+
+      expect(library.count).to eq(1)
+      expect(library.watch_folders).to eq([File.expand_path(folder)])
+      expect(playlist.size).to eq(0)
+      expect(window.instance_variable_get(:@view_stack).visible_child_name).to eq('library')
+    end
+
+    it 'labels the header button as adding to the library' do
+      window = build_window(player, playlist, library: library)
+      button = window.instance_variable_get(:@add_folder_button)
+
+      expect(button.tooltip_text).to eq('Add Folder to Library')
+    end
+
+    it 'still queues a folder when there is no library' do
+      FileUtils.cp(AudioFixtures.sample_mp3, File.join(folder, 'a.mp3'))
+
+      main_window.send(:add_folder, selected_folder(folder))
+
+      expect(playlist.size).to eq(1)
+    end
+
+    it 'rescans the original folder, not each album directory' do
+      album = File.join(folder, 'Artist', 'Album')
+      FileUtils.mkdir_p(album)
+      FileUtils.cp(AudioFixtures.sample_mp3, File.join(album, 'a.mp3'))
+      window = build_window(player, playlist, library: library)
+
+      window.send(:add_folder, selected_folder(folder))
+      pump_main_loop { library.count == 1 }
+
+      FileUtils.cp(AudioFixtures.sample_mp3, File.join(folder, 'b.mp3'))
+      window.send(:rescan_library)
+      pump_main_loop { library.count == 2 }
+
+      expect(library.count).to eq(2)
     end
   end
 end

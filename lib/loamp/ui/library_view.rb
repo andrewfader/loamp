@@ -99,6 +99,15 @@ module Loamp
                        on_finished: method(:scan_finished))
       end
 
+      # Remembers the folder as a watch root, then indexes it. Rescan walks
+      # these roots so a new album next to an existing one is not missed.
+      def index_folder(path)
+        return false if @shutdown
+
+        @library.add_watch_folder(path)
+        scan([path])
+      end
+
       def scanning?
         @scanner.running?
       end
@@ -443,7 +452,7 @@ module Loamp
 
         dialog.select_folder(root) do |source, result|
           folder = source.select_folder_finish(result)
-          scan([folder.path]) if folder
+          index_folder(folder.path) if folder
         rescue StandardError => e
           notify("Could not add folder: #{e.message}")
         end

@@ -7,8 +7,8 @@ module Loamp
 
       def import(xml)
         document = REXML::Document.new(xml.to_s)
-        REXML::XPath.match(document, '//outline[@xmlUrl]').filter_map do |outline|
-          url = outline.attributes['xmlUrl'].to_s.strip
+        REXML::XPath.match(document, '//outline').filter_map do |outline|
+          url = (outline.attributes['xmlUrl'] || outline.attributes['xmlurl']).to_s.strip
           url unless url.empty?
         end.uniq
       rescue REXML::ParseException

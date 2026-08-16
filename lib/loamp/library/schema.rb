@@ -10,7 +10,7 @@ module Loamp
     # added to Metadata and forgotten here would otherwise be read from disk
     # on every scan and then silently dropped.
     module Schema
-      VERSION = 3
+      VERSION = 4
 
       TEXT = %i[title artist album album_artist composer genre comment lyrics
                 musicbrainz_album_id musicbrainz_artist_id].freeze
@@ -35,6 +35,7 @@ module Loamp
       def create(database)
         database.execute_batch(<<~SQL)
           #{table}
+          #{folders_table}
           #{indices}
           #{full_text_search}
         SQL
@@ -55,6 +56,17 @@ module Loamp
         (TAG_COLUMNS - existing).each do |name|
           database.execute("ALTER TABLE tracks ADD COLUMN #{name} #{sql_type(name)}")
         end
+
+        database.execute_batch(folders_table)
+      end
+
+      def folders_table
+        <<~SQL
+          CREATE TABLE IF NOT EXISTS folders (
+            path TEXT PRIMARY KEY,
+            added_at INTEGER NOT NULL
+          );
+        SQL
       end
 
       def table

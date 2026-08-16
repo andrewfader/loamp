@@ -12,6 +12,8 @@ module Loamp
   # Bus messages are drained by #pump rather than a bus watch, so the engine
   # works identically inside the GTK main loop and in a bare test process.
   class AudioEngine
+    include VisualizerPresetControls
+
     # GStreamer works in nanoseconds; the rest of the app works in seconds.
     NANOS_PER_SECOND = 1_000_000_000.0
 
@@ -198,6 +200,7 @@ module Loamp
     end
 
     def visualizer_name = (@visualizer ||= Visualizer.new).name
+    def visualizer_presets = (@visualizer ||= Visualizer.new).presets
 
     def muted?
       @pipeline ? @pipeline.get_property('mute') : false

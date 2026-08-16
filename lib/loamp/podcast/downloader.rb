@@ -13,6 +13,7 @@ module Loamp
         existing = File.file?(destination) ? File.size(destination) : 0
         headers = existing.positive? ? { 'Range' => "bytes=#{existing}-" } : {}
         response = @client.get(url, headers: headers)
+        return destination if already_complete?(response, existing)
         return false unless response.success?
 
         FileUtils.mkdir_p(File.dirname(destination))
@@ -21,6 +22,14 @@ module Loamp
         destination
       rescue SystemCallError, IOError
         false
+      end
+
+      private
+
+      # A completed file asked for bytes past its end: the server answers 416,
+      # which is success for our purposes rather than a failed download.
+      def already_complete?(response, existing)
+        existing.positive? && response.status == 416
       end
     end
   end

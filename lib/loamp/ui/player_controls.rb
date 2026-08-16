@@ -34,6 +34,10 @@ module Loamp
           update_track_progress(track)
           update_controls
         end
+
+        @player.on_volume_changed do |_volume|
+          refresh_volume_display
+        end
       end
 
       def update_track_progress(track = nil)
@@ -215,8 +219,11 @@ module Loamp
         @progress_scale.add_controller(seek_gesture)
 
         @volume_scale.signal_connect('value-changed') do
+          next if @updating_volume
+
+          @player.muted = false if @player.muted?
           @player.set_volume(@volume_scale.value.to_i)
-          @volume_value_label.text = "#{@volume_scale.value.to_i}%"
+          refresh_volume_label
         end
       end
 
@@ -259,18 +266,19 @@ module Loamp
           @player.repeat_mode = :off
         end
         update_repeat_button_icon
+        update_controls
       end
 
       def update_controls
         has_tracks = !@player.playlist.empty?
-        is_playing = @player.playing?
+        playlist = @player.playlist
         is_stopped = @player.stopped?
 
         @play_pause_button.sensitive = has_tracks
         @stop_button.sensitive = !is_stopped
-        @next_button.sensitive = @player.playlist.has_next?
-        @previous_button.sensitive = @player.playlist.has_previous?
-        @progress_scale.sensitive = is_playing
+        @next_button.sensitive = has_tracks && (playlist.has_next? || @player.repeat_mode != :off)
+        @previous_button.sensitive = has_tracks
+        @progress_scale.sensitive = has_tracks && !is_stopped
         @volume_scale.sensitive = true # Volume can always be adjusted
       end
 
@@ -294,9 +302,27 @@ module Loamp
       def format_time(seconds)
         return '0:00' if seconds.nil? || seconds.negative?
 
-        minutes = seconds / 60
-        seconds %= 60
-        format('%d:%02d', minutes, seconds)
+        total = seconds.to_i
+        hours, remainder = total.divmod(3600)
+        minutes, secs = remainder.divmod(60)
+        if hours.positive?
+          format('%d:%02d:%02d', hours, minutes, secs)
+        else
+          format('%d:%02d', minutes, secs)
+        end
+      end
+
+      def refresh_volume_display
+        unless @updating_volume
+          @updating_volume = true
+          @volume_scale.value = @player.volume
+          @updating_volume = false
+        end
+        refresh_volume_label
+      end
+
+      def refresh_volume_label
+        @volume_value_label.text = @player.muted? ? 'Muted' : "#{@player.volume.to_i}%"
       end
     end
   end

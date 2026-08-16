@@ -165,6 +165,18 @@ RSpec.describe Loamp::UI::TrackInfo do
         expect(track_number_label.visible?).to be(true)
       end
 
+      it 'offers a one-click similar-artists action' do
+        discovered = []
+        track_info.on_discover { |track| discovered << track }
+        track_info.update_track(test_track)
+        button = track_info.instance_variable_get(:@similar_button)
+
+        expect(button.visible?).to be(true)
+        expect(button.sensitive?).to be(true)
+        button.signal_emit('clicked')
+        expect(discovered).to eq([test_track])
+      end
+
       it 'shows track number when available' do
         track_info.update_track(test_track)
         track_number_label = track_info.instance_variable_get(:@track_number_label)

@@ -44,11 +44,26 @@ module Loamp
         @graph_view.on_start_station { |artist, mbid| start_themed_station(artist, mbid) }
         @graph_view.on_feedback { |action| steer_station(action) }
         @graph_view.on_adventure_changed { |value| @station.adventure = value if @station }
-        seed_artist = @library&.tracks(limit: 1)&.first
-        artist = seed_artist&.artist.to_s.strip
-        return if artist.empty?
+        @graph_view.on_now_playing { discover_similar(@player.current_track) }
+        @track_info.on_discover { |track| discover_similar(track) }
+      end
 
-        @graph_view.seed(artist, mbid: seed_artist.musicbrainz_artist_id)
+      def discover_similar(track)
+        artist = track&.artist.to_s.strip
+        return notify('Nothing is playing') if artist.empty?
+        return unless @graph_view
+
+        @graph_view.seed(artist, mbid: track.musicbrainz_artist_id, local: true)
+        show_view('discovery')
+      end
+
+      def show_discovery
+        track = @player.current_track
+        if track&.artist.to_s.strip.empty?
+          show_view('discovery')
+        else
+          discover_similar(track)
+        end
       end
 
       def start_themed_station(artist, mbid)

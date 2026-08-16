@@ -63,9 +63,9 @@ module Loamp
         index = @document.lines.rindex { |time, _text| time <= position.to_f }
         return if index == @active_index
 
-        @rows[@active_index]&.remove_css_class('accent') if @active_index
+        @rows[@active_index]&.remove_css_class('accent') unless @active_index.nil?
         @active_index = index
-        @rows[index]&.add_css_class('accent') if index
+        @rows[index]&.add_css_class('accent') unless index.nil?
       end
 
       def clear

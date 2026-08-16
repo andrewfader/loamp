@@ -65,6 +65,7 @@ RSpec.describe Loamp::Library do
       columns = library.instance_variable_get(:@database).table_info('tracks').map { |c| c['name'] }
 
       expect(columns).to include('musicbrainz_album_id', 'musicbrainz_artist_id')
+      expect(library.instance_variable_get(:@database).table_info('folders')).not_to be_empty
       library.close
     end
 
@@ -277,6 +278,10 @@ RSpec.describe Loamp::Library do
       expect(unknown.display_name).to eq('Unknown Artist')
       expect(library.tracks(artist: nil).map(&:title)).to eq(['Untagged'])
     end
+
+    it 'indexes artists and MusicBrainz ids for the similar-artist graph' do
+      expect(library.artist_index).to include('Haim' => true, 'Sigur Rós' => true)
+    end
   end
 
   describe '#search' do
@@ -370,6 +375,65 @@ RSpec.describe Loamp::Library do
 
     it 'defaults to the XDG data directory' do
       expect(described_class.default_path).to end_with('loamp/library.db')
+    end
+
+    it 'remembers watch folders after a reopen' do
+      first = described_class.new(path: database_path)
+      first.add_watch_folder(collection)
+      first.close
+
+      second = described_class.new(path: database_path)
+
+      expect(second.watch_folders).to eq([File.expand_path(collection)])
+      second.close
+    end
+  end
+
+  describe '#watch_folders' do
+    it 'starts empty' do
+      expect(library.watch_folders).to be_empty
+    end
+
+    it 'stores a folder the listener asked to index' do
+      expect(library.add_watch_folder(collection)).to be true
+      expect(library.watch_folders).to eq([File.expand_path(collection)])
+    end
+
+    it 'ignores a path that is not a directory' do
+      expect(library.add_watch_folder('/nowhere/at/all')).to be false
+      expect(library.watch_folders).to be_empty
+    end
+
+    it 'does not store a folder twice' do
+      2.times { library.add_watch_folder(collection) }
+
+      expect(library.watch_folders).to eq([File.expand_path(collection)])
+    end
+
+    it 'collapses a nested folder into its parent' do
+      child = File.join(collection, 'Artist', 'Album')
+      FileUtils.mkdir_p(child)
+      library.add_watch_folder(child)
+
+      library.add_watch_folder(collection)
+
+      expect(library.watch_folders).to eq([File.expand_path(collection)])
+    end
+
+    it 'does not store a folder already covered by a parent' do
+      child = File.join(collection, 'Artist', 'Album')
+      FileUtils.mkdir_p(child)
+      library.add_watch_folder(collection)
+
+      library.add_watch_folder(child)
+
+      expect(library.watch_folders).to eq([File.expand_path(collection)])
+    end
+
+    it 'falls back to album directories when nothing was stored' do
+      path = index(title: 'Falling', artist: 'Haim', album: 'Days Are Gone')
+
+      expect(library.watch_folders).to eq([File.dirname(path)])
     end
   end
 end

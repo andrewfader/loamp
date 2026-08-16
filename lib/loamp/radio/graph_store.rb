@@ -22,11 +22,17 @@ module Loamp
 
       def store_edges(seed, edges, fetched_at: Time.now.to_i)
         @database.transaction do
-          edges.each do |target, weight|
+          edges.each do |target, weight, name|
             @database.execute(<<~SQL, [seed, target, weight.to_f, fetched_at])
               INSERT INTO edges (seed, target, weight, fetched_at) VALUES (?, ?, ?, ?)
               ON CONFLICT(seed, target) DO UPDATE SET weight=excluded.weight,
                 fetched_at=excluded.fetched_at
+            SQL
+            next if name.to_s.empty?
+
+            @database.execute(<<~SQL, [target, name.to_s])
+              INSERT INTO labels (id, label) VALUES (?, ?)
+              ON CONFLICT(id) DO UPDATE SET label=excluded.label
             SQL
           end
         end
@@ -34,10 +40,14 @@ module Loamp
 
       def neighbours(seed, max_age: CACHE_AGE)
         cutoff = Time.now.to_i - max_age
-        @database.execute(<<~SQL, [seed, cutoff]).map { |row| [row['target'], row['weight'].to_f] }
-          SELECT target, weight FROM edges WHERE seed = ? AND fetched_at >= ?
+        @database.execute(<<~SQL, [seed, cutoff]).map do |row|
+          SELECT edges.target, edges.weight, labels.label FROM edges
+          LEFT JOIN labels ON labels.id = edges.target
+          WHERE seed = ? AND fetched_at >= ?
           ORDER BY weight DESC
         SQL
+          [row['target'], row['weight'].to_f, row['label']]
+        end
       end
 
       def feedback(track, value)
@@ -75,6 +85,7 @@ module Loamp
             track_key TEXT PRIMARY KEY, artist TEXT, score INTEGER NOT NULL
           );
           CREATE TABLE IF NOT EXISTS banned_artists (artist TEXT PRIMARY KEY);
+          CREATE TABLE IF NOT EXISTS labels (id TEXT PRIMARY KEY, label TEXT NOT NULL);
         SQL
       end
 

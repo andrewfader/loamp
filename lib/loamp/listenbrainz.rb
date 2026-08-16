@@ -4,6 +4,10 @@ module Loamp
   class ListenBrainz
     API = 'https://api.listenbrainz.org/1'
     LABS = 'https://labs.api.listenbrainz.org'
+    # Labs refuses similar-artist queries without an algorithm. This is the
+    # long-window session dataset the public viewer uses by default.
+    SIMILAR_ALGORITHM = 'session_based_days_7500_session_300_contribution_5_' \
+                        'threshold_10_limit_100_filter_True_skip_30'
 
     def initialize(token: nil, client: Http::Client.new, api: API, labs: LABS)
       @token = token
@@ -15,12 +19,17 @@ module Loamp
     def similar_artists(mbid)
       return [] unless mbid.to_s.match?(Metadata::MBID)
 
-      query = Http::Client.query(artist_mbids: mbid)
+      query = Http::Client.query(artist_mbid: mbid, artist_mbids: mbid,
+                                 algorithm: SIMILAR_ALGORITHM)
       response = @client.get("#{@labs}/similar-artists/json?#{query}")
       rows = response.success? ? response.json : nil
-      Array(rows).filter_map do |row|
+      list = rows.is_a?(Hash) ? [rows] : Array(rows)
+      list.filter_map do |row|
+        next unless row.is_a?(Hash)
+
         id = row['artist_mbid'] || row['mbid']
-        [id, (row['score'] || row['similarity']).to_f] if id
+        name = row['name'] || row['artist_name']
+        [id, (row['score'] || row['similarity']).to_f, name] if id
       end
     end
 

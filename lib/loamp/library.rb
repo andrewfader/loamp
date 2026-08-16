@@ -104,6 +104,23 @@ module Loamp
       database.execute('DELETE FROM tracks')
     end
 
+    # Roots the listener asked to index. Nested folders collapse into their
+    # parent so an overlapping pair is stored once, and Rescan walks these
+    # rather than every album directory a track happens to sit in.
+    def watch_folders
+      stored = database.execute('SELECT path FROM folders ORDER BY path')
+        .map { |row| row['path'] }
+      stored.empty? ? inferred_watch_folders : stored
+    end
+
+    def add_watch_folder(directory)
+      root = File.expand_path(directory.to_s)
+      return false unless File.directory?(root)
+
+      database.transaction { store_watch_folder(root) }
+      true
+    end
+
     # --- Reading ------------------------------------------------------------
 
     def count
@@ -120,6 +137,15 @@ module Loamp
 
     def paths
       database.execute('SELECT path FROM tracks ORDER BY path').map { |row| row['path'] }
+    end
+
+    # Keys the similar-artist graph uses to colour nodes the library holds.
+    def artist_index
+      database.execute('SELECT DISTINCT artist, musicbrainz_artist_id FROM tracks')
+        .each_with_object({}) do |row, index|
+          index[row['artist']] = true unless row['artist'].to_s.empty?
+          index[row['musicbrainz_artist_id']] = true unless row['musicbrainz_artist_id'].to_s.empty?
+        end
     end
 
     def unresolved_artists
@@ -257,6 +283,38 @@ module Loamp
         database.execute('PRAGMA synchronous = NORMAL')
         database.execute('PRAGMA temp_store = MEMORY')
       end
+    end
+
+    def store_watch_folder(root)
+      already_watched = false
+
+      database.execute('SELECT path FROM folders').each do |row|
+        path = row['path']
+        if path == root || nested?(root, under: path)
+          already_watched = true
+        elsif nested?(path, under: root)
+          database.execute('DELETE FROM folders WHERE path = ?', [path])
+        end
+      end
+
+      return if already_watched
+
+      database.execute('INSERT INTO folders (path, added_at) VALUES (?, ?)',
+                       [root, Time.now.to_i])
+    end
+
+    def nested?(path, under:)
+      path.start_with?("#{under}#{File::SEPARATOR}")
+    end
+
+    # An index written before folders were stored has no roots to rescan.
+    # Album directories are a poorer substitute, but they still pick up
+    # tag changes in files that are already known.
+    def inferred_watch_folders
+      database.execute('SELECT path FROM tracks')
+        .map { |row| File.dirname(row['path']) }
+        .uniq
+        .sort
     end
 
     def fingerprint(absolute)

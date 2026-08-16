@@ -92,7 +92,11 @@ module Loamp
     def previous_track
       return seek(0) if restart_instead_of_skipping?
 
-      advance_to(@playlist.previous_index(wrap: repeat_all?))
+      index = @playlist.previous_index(wrap: repeat_all?)
+      # At the start of the first track, restart rather than stopping.
+      return seek(0) unless index
+
+      advance_to(index)
     end
 
     def seek(position)

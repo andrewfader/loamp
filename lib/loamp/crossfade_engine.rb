@@ -6,6 +6,8 @@ module Loamp
   # Two playbin decoders bridged into one audiomixer. The next stream is
   # prerollled, then both run while their gains cross over.
   class CrossfadeEngine
+    include VisualizerPresetControls
+
     NANOS_PER_SECOND = 1_000_000_000.0
     SEEK_FLAGS = Gst::SeekFlags::FLUSH | Gst::SeekFlags::ACCURATE
 
@@ -20,6 +22,7 @@ module Loamp
       @fade_elements = Array.new(2) { |index| @mixer.get_by_name("loamp-fade-#{index}") }
       @visualizer_sink = @mixer.get_by_name('loamp-crossfade-visualizer')
       @visualizer_valve = @mixer.get_by_name('loamp-crossfade-visualizer-valve')
+      @visualizer_element = @mixer.get_by_name('loamp-crossfade-visualizer-plugin')
       @active = 0
       @volume = 100
       @callbacks = Hash.new { |_hash, _key| ->(*) {} }
@@ -113,7 +116,7 @@ module Loamp
       apply_fade
     end
 
-    def raw_volume = master_gain
+    def raw_volume = muted? ? 0.0 : master_gain
 
     def enable_visualizer
       return nil unless @visualizer_sink && @visualizer_valve
@@ -125,6 +128,12 @@ module Loamp
     def disable_visualizer
       @visualizer_valve&.set_property('drop', true)
     end
+
+    def visualizer_presets
+      @visualizer_presets ||= VisualizerPresets.new(@visualizer_element,
+                                                    restart: method(:restart_visualizer))
+    end
+
 
     def crossfade_seconds=(seconds)
       @crossfade_seconds = seconds.to_f.clamp(0.1, 12)
@@ -171,6 +180,22 @@ module Loamp
 
     private
 
+    # The projectm element reads its preset at start-up, so a new one needs the
+    # element bounced. The valve is shut first: with nothing flowing into it the
+    # branch can go back to NULL and up again without disturbing playback.
+    def restart_visualizer
+      return false unless @visualizer_element && @visualizer_valve
+      return false if @visualizer_valve.get_property('drop')
+
+      @visualizer_valve.set_property('drop', true)
+      @visualizer_element.set_state(Gst::State::NULL)
+      @visualizer_element.sync_state_with_parent
+      @visualizer_valve.set_property('drop', false)
+      true
+    rescue StandardError
+      false
+    end
+
     def build_player(index)
       Gst::ElementFactory.make('playbin3', "loamp-crossfade-player-#{index}").tap do |player|
         description = <<~PIPELINE.split.join(' ')
@@ -208,7 +233,7 @@ module Loamp
 
       <<~PIPELINE
         loamp-crossfade-output. ! queue ! valve name=loamp-crossfade-visualizer-valve drop=true
-          ! audioconvert ! #{@visualizer_name} ! videoconvert
+          ! audioconvert ! #{@visualizer_name} name=loamp-crossfade-visualizer-plugin ! videoconvert
           ! video/x-raw(memory:SystemMemory),format=RGBA
           ! gtk4paintablesink name=loamp-crossfade-visualizer sync=false
       PIPELINE

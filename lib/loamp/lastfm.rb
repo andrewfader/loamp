@@ -17,14 +17,16 @@ module Loamp
 
     def similar_artists(artist, limit: 50)
       fields = get('artist.getSimilar', artist: artist, limit: limit)
-      Array(fields&.dig('similarartists', 'artist')).map do |row|
+      wrap_list(fields&.dig('similarartists', 'artist')).filter_map do |row|
+        next unless row.is_a?(Hash)
+
         [row['name'], row['match'].to_f, row['mbid']]
       end
     end
 
     def top_artists(tag, limit: 50)
       fields = get('tag.getTopArtists', tag: tag, limit: limit)
-      Array(fields&.dig('topartists', 'artist'))
+      wrap_list(fields&.dig('topartists', 'artist'))
     end
 
     def submit(track, listened_at:, now_playing: false)
@@ -46,7 +48,7 @@ module Loamp
     end
 
     def post(method, parameters)
-      fields = common(method).merge(parameters).merge(sk: @session_key)
+      fields = compact(common(method).merge(parameters).merge(sk: @session_key))
       fields[:api_sig] = signature(fields)
       fields[:format] = 'json'
       response = @client.post(@endpoint, body: Http::Client.query(fields),
@@ -60,6 +62,19 @@ module Loamp
       text = fields.sort_by { |key, _value| key.to_s }
         .map { |key, value| "#{key}#{value}" }.join
       Digest::MD5.hexdigest("#{text}#{@secret}")
+    end
+
+    def compact(fields)
+      fields.reject { |_key, value| value.nil? || value.to_s.empty? }
+    end
+
+    # Last.fm collapses a one-element collection to a bare object.
+    def wrap_list(value)
+      case value
+      when nil then []
+      when Array then value
+      else [value]
+      end
     end
 
     def form_headers = { 'Content-Type' => 'application/x-www-form-urlencoded' }

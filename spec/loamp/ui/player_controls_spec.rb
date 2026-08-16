@@ -225,23 +225,20 @@ RSpec.describe Loamp::UI::PlayerControls do
       end
     end
 
-    it 'is only sensitive when player is playing' do
+    it 'lets the user seek while paused, but not while stopped' do
       progress_scale = controls.instance_variable_get(:@progress_scale)
 
-      # Test when stopped
       player.stop
       controls.send(:update_controls)
       expect(progress_scale.sensitive?).to be(false)
 
-      # Test when playing
       start_real_playback
       controls.send(:update_controls)
       expect(progress_scale.sensitive?).to be(true)
 
-      # Test when paused
       player.pause
       controls.send(:update_controls)
-      expect(progress_scale.sensitive?).to be(false)
+      expect(progress_scale.sensitive?).to be(true)
     end
 
     it 'updates progress correctly with different durations' do
@@ -397,7 +394,7 @@ RSpec.describe Loamp::UI::PlayerControls do
         expect(play_pause_button.sensitive?).to be(true)
         expect(stop_button.sensitive?).to be(false) # Stopped initially
         expect(next_button.sensitive?).to be(true)
-        expect(previous_button.sensitive?).to be(false)
+        expect(previous_button.sensitive?).to be(true)
 
         # --- Test with player playing ---
         player.play
@@ -412,6 +409,10 @@ RSpec.describe Loamp::UI::PlayerControls do
 
         expect(next_button.sensitive?).to be(false)
         expect(previous_button.sensitive?).to be(true)
+
+        player.repeat_mode = :all
+        controls.send(:update_controls)
+        expect(next_button.sensitive?).to be(true)
       end
     end
   end
@@ -437,8 +438,17 @@ RSpec.describe Loamp::UI::PlayerControls do
       expect(player_controls.send(:format_time, 65)).to eq('1:05')
     end
 
-    it 'handles long durations correctly' do
-      expect(player_controls.send(:format_time, 3661)).to eq('61:01') # 1 hour, 1 minute, 1 second
+    it 'handles long durations with hours' do
+      expect(player_controls.send(:format_time, 3661)).to eq('1:01:01')
+    end
+  end
+
+  describe 'mute display' do
+    it 'shows Muted when the player is muted from elsewhere' do
+      controls = described_class.new(player)
+      player.muted = true
+
+      expect(controls.instance_variable_get(:@volume_value_label).text).to eq('Muted')
     end
   end
 end

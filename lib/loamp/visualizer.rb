@@ -17,10 +17,34 @@ module Loamp
 
     def available? = !@name.nil? && @sink_available
 
+    # The preset cursor follows the plugin element, which only exists once one
+    # has been built; building it early costs a factory call and nothing else.
+    def presets
+      @presets ||= VisualizerPresets.new(plugin, restart: method(:restart))
+    end
+
+    # projectM loads its preset when the element starts, so a preset picked
+    # mid-track only shows up once the visualization chain is rebuilt. Dropping
+    # and restoring the vis flag is the same path the Start/Stop button takes.
+    def restart
+      return false unless @playbin
+
+      flags = @playbin.get_property('flags').to_i
+      return false unless flags.anybits?(PLAY_FLAG_VIS)
+
+      @playbin.set_property('flags', flags & ~PLAY_FLAG_VIS)
+      @playbin.set_property('flags', flags)
+      true
+    rescue StandardError
+      false
+    end
+
     def attach(playbin)
       return false unless available?
 
+      @playbin = playbin
       @plugin ||= build(@name)
+      presets.element = @plugin
       @video_sink ||= Gst.parse_bin_from_description(
         'videoconvert ! video/x-raw(memory:SystemMemory),format=RGBA ! ' \
         'gtk4paintablesink name=loamp-visualizer-sink',
@@ -48,6 +72,12 @@ module Loamp
     end
 
     private
+
+    def plugin
+      return nil unless @name
+
+      @plugin ||= build(@name)
+    end
 
     def build(name)
       Gst::ElementFactory.make(name, "loamp-#{name}")

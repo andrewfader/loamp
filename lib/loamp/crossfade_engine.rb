@@ -77,6 +77,7 @@ module Loamp
     end
 
     def shutdown
+      @visualizer_restart&.join(2)
       stop
       @players.clear
       @buses.clear
@@ -134,7 +135,6 @@ module Loamp
                                                     restart: method(:restart_visualizer))
     end
 
-
     def crossfade_seconds=(seconds)
       @crossfade_seconds = seconds.to_f.clamp(0.1, 12)
       @settings.crossfade_seconds = seconds
@@ -181,16 +181,26 @@ module Loamp
     private
 
     # The projectm element reads its preset at start-up, so a new one needs the
-    # element bounced. The valve is shut first: with nothing flowing into it the
-    # branch can go back to NULL and up again without disturbing playback.
+    # element bounced. The valve is shut first, leaving the branch with nothing
+    # to push while it cycles.
+    #
+    # The bounce runs off the main thread on purpose: taking the element down to
+    # NULL waits for its streaming thread, which is in turn waiting for the GTK
+    # main loop to take the frame it is holding. Doing that from the main loop
+    # deadlocks; from a worker it settles in a few milliseconds.
     def restart_visualizer
       return false unless @visualizer_element && @visualizer_valve
       return false if @visualizer_valve.get_property('drop')
+      return false if @visualizer_restart&.alive?
 
       @visualizer_valve.set_property('drop', true)
-      @visualizer_element.set_state(Gst::State::NULL)
-      @visualizer_element.sync_state_with_parent
-      @visualizer_valve.set_property('drop', false)
+      @visualizer_restart = Thread.new do
+        @visualizer_element.set_state(Gst::State::NULL)
+        @visualizer_valve.set_property('drop', false)
+        @visualizer_element.sync_state_with_parent
+      rescue StandardError
+        nil
+      end
       true
     rescue StandardError
       false

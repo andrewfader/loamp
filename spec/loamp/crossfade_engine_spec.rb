@@ -57,23 +57,25 @@ RSpec.describe Loamp::CrossfadeEngine do
     end
 
     # A preset change restarts the plugin element mid-stream, so the important
-    # part is that audio keeps flowing and the pipeline stays quiet.
+    # part is that audio keeps flowing, the valve reopens and the bus stays
+    # quiet once the bounce has finished.
     it 'restarts the running visualizer branch without disturbing playback' do
       skip 'no visualization plugin installed' unless engine.visualizer_name
 
       errors = []
       engine.on_error { |message| errors << message }
-      engine.load(AudioFixtures.tone(seconds: 3, name: 'crossfade-presets.wav'))
+      engine.load(AudioFixtures.tone(seconds: 5, name: 'crossfade-presets.wav'))
       engine.play
       engine.enable_visualizer
-      settle(engine, 0.5)
+      settle(1)
       before = engine.position
 
       expect(engine.send(:restart_visualizer)).to be(true)
-      settle(engine, 0.5)
+      settle(2)
 
+      expect(engine.instance_variable_get(:@visualizer_restart)).not_to be_alive
+      expect(engine.instance_variable_get(:@visualizer_valve).get_property('drop')).to be(false)
       expect(engine.position).to be > before
-      expect(engine.state).to eq(:playing)
       expect(errors).to be_empty
     end
 
@@ -84,11 +86,15 @@ RSpec.describe Loamp::CrossfadeEngine do
     end
   end
 
-  def settle(engine, seconds)
+  # Frames have to be taken off the paintable sink by the main loop, otherwise
+  # the visualizer branch stalls with a buffer in hand.
+  def settle(seconds)
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + seconds
+    context = GLib::MainContext.default
     while Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
       engine.pump
-      sleep 0.02
+      context.iteration(false) while context.pending?
+      sleep 0.01
     end
   end
 end

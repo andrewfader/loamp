@@ -68,7 +68,7 @@ module Loamp
           dy = right.y - left.y
           distance = [Math.sqrt((dx * dx) + (dy * dy)), 1].max
           force = (distance - 110) * 0.04 * [edge.weight, 0.1].max
-          push(left, right, dx / distance * -force, dy / distance * -force)
+          push(left, right, dx / distance * force, dy / distance * force)
         end
       end
 

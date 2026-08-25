@@ -46,4 +46,41 @@ RSpec.describe Loamp::Radio::GraphLayout do
 
     expect(layout.nodes['a'].x).to eq(origin)
   end
+
+  it 'pulls distant connected nodes closer together' do
+    layout.add_node('a')
+    layout.add_node('b')
+    layout.nodes['a'].x = 0
+    layout.nodes['a'].y = 0
+    layout.nodes['a'].pinned = true
+    layout.nodes['b'].x = 300
+    layout.nodes['b'].y = 0
+    layout.add_edge('a', 'b', weight: 1)
+
+    layout.step(1)
+
+    expect(layout.nodes['b'].x).to be < 300
+  end
+
+  it 'converges a star graph rather than expanding infinitely' do
+    seed = layout.add_node('seed')
+    seed.x = 200
+    seed.y = 150
+    seed.pinned = true
+
+    20.times do |i|
+      layout.add_node("node#{i}")
+      layout.add_edge('seed', "node#{i}", weight: 0.5)
+    end
+
+    500.times { layout.step }
+    xs_after_500 = layout.nodes.values.map(&:x)
+    span_after_500 = xs_after_500.max - xs_after_500.min
+
+    200.times { layout.step }
+    xs_after_700 = layout.nodes.values.map(&:x)
+    span_after_700 = xs_after_700.max - xs_after_700.min
+
+    expect(span_after_700).to be_within(10.0).of(span_after_500)
+  end
 end

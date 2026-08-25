@@ -171,6 +171,9 @@ module Loamp
       def build_context_menu
         menu = Gio::Menu.new
         menu.append('Play', 'playlist.play')
+        menu.append('Play Next', 'playlist.play-next')
+        menu.append('Move Up', 'playlist.move-up')
+        menu.append('Move Down', 'playlist.move-down')
         menu.append('Remove from Playlist', 'playlist.remove')
 
         popover = Gtk::PopoverMenu.new(menu)
@@ -187,8 +190,17 @@ module Loamp
       def install_context_actions
         group = Gio::SimpleActionGroup.new
         group.add_action(action('play') { play_selected })
+        group.add_action(action('play-next') { play_selected_next })
+        group.add_action(action('move-up') { move_selected(-1) })
+        group.add_action(action('move-down') { move_selected(1) })
         group.add_action(action('remove') { remove_selected })
         insert_action_group('playlist', group)
+
+        keys = Gtk::EventControllerKey.new
+        keys.signal_connect('key-pressed') do |_controller, keyval, _keycode, state|
+          handle_queue_key(keyval, state)
+        end
+        @column_view.add_controller(keys)
       end
 
       def action(name, &)
@@ -210,6 +222,38 @@ module Loamp
       def play_selected
         index = selected_index
         play_track_at(index) if index
+      end
+
+      def play_selected_next
+        index = selected_index
+        return unless index
+
+        new_index = @playlist.insert_next(index)
+        refresh_and_select(new_index)
+      end
+
+      def move_selected(offset)
+        index = selected_index
+        return unless index
+
+        new_index = @playlist.move(index, offset)
+        refresh_and_select(new_index)
+      end
+
+      def refresh_and_select(index)
+        refresh
+        @selection.selected = index if index
+      end
+
+      def handle_queue_key(keyval, state)
+        return remove_selected || true if keyval == Gdk::Keyval::KEY_Delete
+
+        alt = state.to_i.anybits?(Gdk::ModifierType::ALT_MASK.to_i)
+        return false unless alt
+        return move_selected(-1) || true if keyval == Gdk::Keyval::KEY_Up
+        return move_selected(1) || true if keyval == Gdk::Keyval::KEY_Down
+
+        false
       end
 
       def remove_selected

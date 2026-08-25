@@ -169,6 +169,32 @@ RSpec.describe Loamp::UI::PlaylistView do
     end
   end
 
+  describe 'queue ordering' do
+    it 'moves the selected track up and keeps it selected' do
+      add_two_tracks
+      original = playlist.tracks.dup
+      selection.selected = 1
+
+      playlist_view.send(:move_selected, -1)
+
+      expect(playlist.tracks).to eq(original.reverse)
+      expect(selection.selected).to eq(0)
+    end
+
+    it 'puts the selected track after the current track' do
+      add_two_tracks
+      playlist.add_track('/tmp/song3.mp3')
+      playlist_view.refresh
+      first, second, third = playlist.tracks
+      playlist.set_current_track(0)
+      selection.selected = 2
+
+      playlist_view.send(:play_selected_next)
+
+      expect(playlist.tracks).to eq([first, third, second])
+    end
+  end
+
   describe '#selected_index' do
     it 'reports the selected row' do
       add_two_tracks

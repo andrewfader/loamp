@@ -21,6 +21,7 @@ A music player built with Ruby, GTK4 and libadwaita for Linux.
   SQLite database with full-text search, so browsing and searching stay instant
 - Virtualised playlist that stays responsive at any size
 - Playlist management with shuffle and repeat modes
+- Standard M3U/M3U8 playlist import and export
 - Volume with a perceptual (cubic) curve, and mute
 - Internet-radio discovery through Radio Browser, with live ICY song-title
   updates, favorites, history, and directory-server failover
@@ -110,6 +111,10 @@ than indexed twice.
 | <kbd>Ctrl</kbd>+<kbd>←</kbd> / <kbd>Ctrl</kbd>+<kbd>→</kbd> | Previous / next track |
 | <kbd>↑</kbd> / <kbd>↓</kbd> | Volume up / down |
 | <kbd>M</kbd> | Toggle mute |
+| <kbd>Delete</kbd> (in queue) | Remove selected track |
+| <kbd>Alt</kbd>+<kbd>↑</kbd> / <kbd>Alt</kbd>+<kbd>↓</kbd> (in queue) | Reorder selected track |
+
+Right-click a queue entry to play it next, move it, or remove it.
 
 Media keys work too, through MPRIS — see below.
 

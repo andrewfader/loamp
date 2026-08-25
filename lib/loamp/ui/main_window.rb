@@ -11,6 +11,7 @@ module Loamp
       include SecondaryViews
       include PlaybackObservers
       include KeyboardShortcuts
+      include PlaylistDialogs
 
       TITLE = 'LOAMP'
       SUBTITLE = 'Linux Open Audio Music Player'
@@ -170,6 +171,8 @@ module Loamp
         @menu_button.tooltip_text = 'Main Menu'
 
         menu = Gio::Menu.new
+        menu.append('Open Playlist…', 'win.open-playlist')
+        menu.append('Save Playlist…', 'win.save-playlist')
         menu.append('Clear Playlist', 'win.clear')
         menu.append('Rescan Library', 'win.rescan') if @library
         menu.append('Internet Radio', 'win.show-radio') if @radio_browser
@@ -226,7 +229,7 @@ module Loamp
         title.xalign = 0
         title.hexpand = true
 
-        hint = Gtk::Label.new('DOUBLE-CLICK TO PLAY')
+        hint = Gtk::Label.new('RIGHT-CLICK TO ARRANGE')
         hint.add_css_class('loamp-microcopy')
         heading.append(title)
         heading.append(hint)
@@ -298,6 +301,8 @@ module Loamp
 
       def setup_actions
         group = Gio::SimpleActionGroup.new
+        group.add_action(build_action('open-playlist') { open_playlist_dialog })
+        group.add_action(build_action('save-playlist') { save_playlist_dialog })
         group.add_action(build_action('clear') { clear_playlist })
         group.add_action(build_action('about') { show_about_dialog })
         group.add_action(build_action('rescan') { rescan_library }) if @library

@@ -230,6 +230,50 @@ RSpec.describe Loamp::Playlist do
     end
   end
 
+  describe 'queue ordering' do
+    before do
+      playlist.add_track(test_file1)
+      playlist.add_track(test_file2)
+      playlist.add_track(test_file3)
+    end
+
+    it 'moves a requested track directly after the current track' do
+      playlist.set_current_track(0)
+
+      expect(playlist.insert_next(2)).to eq(1)
+      expect(playlist.tracks.map(&:file_path)).to eq([test_file1, test_file3, test_file2])
+      expect(playlist.current_track.file_path).to eq(test_file1)
+    end
+
+    it 'keeps playing the same track when an earlier track moves' do
+      playlist.set_current_track(1)
+      current = playlist.current_track
+
+      expect(playlist.move(0, 2)).to eq(2)
+      expect(playlist.current_track).to equal(current)
+      expect(playlist.current_index).to eq(0)
+    end
+
+    it 'clamps moves at the ends of the queue' do
+      expect(playlist.move(0, -1)).to eq(0)
+      expect(playlist.move(2, 1)).to eq(2)
+    end
+
+    it 'rejects invalid queue positions' do
+      expect(playlist.insert_next(99)).to be_nil
+      expect(playlist.move(-1, 1)).to be_nil
+    end
+
+    it 'honours play next while shuffle is enabled' do
+      playlist.enable_shuffle
+      playlist.set_current_track(0)
+
+      destination = playlist.insert_next(2)
+
+      expect(playlist.next_index).to eq(destination)
+    end
+  end
+
   describe '#clear' do
     before do
       playlist.add_track(test_file1)

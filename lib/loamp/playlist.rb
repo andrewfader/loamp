@@ -28,7 +28,39 @@ module Loamp
     # send TagLib back to the disk for every file.
     def append(track)
       @tracks << track
+      rebuild_shuffle_preserving_current if @shuffle_mode
       track
+    end
+
+    # Put a track immediately after the one that is playing. This is the
+    # useful meaning of "play next" even while shuffle is enabled: an explicit
+    # listener choice outranks the random order.
+    def insert_next(index)
+      return nil unless valid_index?(index)
+      return index if index == @current_index
+
+      track = @tracks.delete_at(index)
+      @current_index -= 1 if index < @current_index
+      destination = [@current_index + 1, @tracks.length].min
+      @tracks.insert(destination, track)
+      rebuild_shuffle_preserving_current
+      prioritize_in_shuffle(destination)
+      destination
+    end
+
+    # Reorder one queue entry while keeping the cursor attached to the same
+    # Track object. Returns the new index, or nil for an invalid move.
+    def move(index, offset)
+      return nil unless valid_index?(index)
+
+      destination = (index + offset).clamp(0, @tracks.length - 1)
+      return index if destination == index
+
+      current = current_track
+      @tracks.insert(destination, @tracks.delete_at(index))
+      @current_index = @tracks.index(current) || 0
+      rebuild_shuffle_preserving_current
+      destination
     end
 
     def add_station(station)
@@ -195,6 +227,23 @@ module Loamp
     end
 
     private
+
+    def valid_index?(index)
+      index.is_a?(Integer) && index >= 0 && index < @tracks.length
+    end
+
+    def rebuild_shuffle_preserving_current
+      enable_shuffle if @shuffle_mode
+    end
+
+    def prioritize_in_shuffle(index)
+      return unless @shuffle_mode
+
+      @shuffle_indices.delete(index)
+      current_position = @shuffle_indices.index(@current_index) || 0
+      @shuffle_indices.insert(current_position + 1, index)
+      @shuffle_position = current_position
+    end
 
     # The shuffle permutation holds indices, so removing a track invalidates
     # it. Rebuilding keeps shuffle pointing at tracks that still exist.

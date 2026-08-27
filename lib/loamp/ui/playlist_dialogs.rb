@@ -14,9 +14,12 @@ module Loamp
           file = source.open_finish(result)
           next unless file&.path
 
+          before = @playlist.size
           count = PlaylistFile.append_to(@playlist, file.path)
           @playlist_view.refresh
+          update_queue_empty_state
           notify(count == 1 ? 'Added 1 playlist track' : "Added #{count} playlist tracks")
+          autoplay_if_idle(before.zero? && count.positive?)
         rescue StandardError => e
           notify("Could not open playlist: #{e.message}")
         end

@@ -55,7 +55,7 @@ module Loamp
       end
 
       def create_console_header_widgets
-        @console_label = Gtk::Label.new('TRANSPORT')
+        @console_label = Gtk::Label.new('Playback')
         @console_label.add_css_class('loamp-kicker')
         @console_label.xalign = 0
 
@@ -176,10 +176,14 @@ module Loamp
         row = Gtk::Box.new(:horizontal, 6)
         row.halign = :center
 
-        row.append(Gtk::Image.new(icon_name: 'audio-volume-muted-symbolic'))
+        @mute_button = Gtk::ToggleButton.new
+        @mute_button.add_css_class('flat')
+        @mute_button.tooltip_text = 'Mute'
+        refresh_mute_button
+
+        row.append(@mute_button)
         row.append(@volume_scale)
         row.append(@volume_value_label)
-        row.append(Gtk::Image.new(icon_name: 'audio-volume-high-symbolic'))
         row
       end
 
@@ -208,13 +212,21 @@ module Loamp
           cycle_repeat_mode
         end
 
+        @mute_button.signal_connect('toggled') do
+          next if @updating_mute
+
+          @player.muted = @mute_button.active?
+          refresh_mute_button
+          refresh_volume_label
+        end
+
         seek_gesture = Gtk::GestureClick.new
         seek_gesture.signal_connect('pressed') do
           @seeking = true
         end
         seek_gesture.signal_connect('released') do
           @seeking = false
-          @player.seek(@progress_scale.value)
+          @player.seek(@progress_scale.value) if @progress_scale.sensitive?
         end
         @progress_scale.add_controller(seek_gesture)
 
@@ -224,11 +236,12 @@ module Loamp
           @player.muted = false if @player.muted?
           @player.set_volume(@volume_scale.value.to_i)
           refresh_volume_label
+          refresh_mute_button
         end
       end
 
       def update_play_pause_button(state)
-        @state_label.text = state == :playing ? '●  ON AIR' : '○  STANDBY' if @state_label
+        @state_label.text = state == :playing ? 'Playing' : 'Stopped' if @state_label
         remove_css_class('is-playing')
         add_css_class('is-playing') if state == :playing
 
@@ -243,6 +256,7 @@ module Loamp
       end
 
       def update_repeat_button_icon
+        @repeat_button.remove_css_class('suggested-action')
         case @player.repeat_mode
         when :off
           @repeat_button.child = Gtk::Image.new(icon_name: 'media-playlist-repeat-symbolic')
@@ -250,9 +264,11 @@ module Loamp
         when :one
           @repeat_button.child = Gtk::Image.new(icon_name: 'media-playlist-repeat-one-symbolic')
           @repeat_button.tooltip_text = 'Repeat: One'
+          @repeat_button.add_css_class('suggested-action')
         when :all
           @repeat_button.child = Gtk::Image.new(icon_name: 'media-playlist-repeat-symbolic')
           @repeat_button.tooltip_text = 'Repeat: All'
+          @repeat_button.add_css_class('suggested-action')
         end
       end
 
@@ -273,30 +289,41 @@ module Loamp
         has_tracks = !@player.playlist.empty?
         playlist = @player.playlist
         is_stopped = @player.stopped?
+        live = live_stream?
 
         @play_pause_button.sensitive = has_tracks
         @stop_button.sensitive = !is_stopped
         @next_button.sensitive = has_tracks && (playlist.has_next? || @player.repeat_mode != :off)
         @previous_button.sensitive = has_tracks
-        @progress_scale.sensitive = has_tracks && !is_stopped
-        @volume_scale.sensitive = true # Volume can always be adjusted
+        @progress_scale.sensitive = has_tracks && !is_stopped && !live
+        @volume_scale.sensitive = true
       end
 
       def update_progress(position, duration)
+        live = live_stream? || duration.to_f <= 0 && @player.playing?
         @position_label.text = format_time(position)
-        @duration_label.text = format_time(duration)
+        @duration_label.text = live ? 'Live' : format_time(duration)
 
         # While the user is dragging the slider, position updates from the
         # engine would yank it back out from under them.
         return if @seeking
 
-        if duration.positive?
+        if duration.to_f.positive? && !live_stream?
           @progress_scale.set_range(0, duration)
           @progress_scale.value = position
         else
           @progress_scale.set_range(0, 100)
           @progress_scale.value = 0
         end
+      end
+
+      def live_stream?
+        track = @player.playlist.current_track
+        return false unless track
+
+        uri = track.file_path.to_s
+        duration = track.duration.to_f
+        duration <= 0 && uri.match?(%r{\Ahttps?://}i)
       end
 
       def format_time(seconds)
@@ -319,10 +346,25 @@ module Loamp
           @updating_volume = false
         end
         refresh_volume_label
+        refresh_mute_button
       end
 
       def refresh_volume_label
         @volume_value_label.text = @player.muted? ? 'Muted' : "#{@player.volume.to_i}%"
+      end
+
+      def refresh_mute_button
+        return unless @mute_button
+
+        @updating_mute = true
+        @mute_button.active = @player.muted?
+        @mute_button.icon_name = if @player.muted?
+                                   'audio-volume-muted-symbolic'
+                                 else
+                                   'audio-volume-high-symbolic'
+                                 end
+        @mute_button.tooltip_text = @player.muted? ? 'Unmute' : 'Mute'
+        @updating_mute = false
       end
     end
   end

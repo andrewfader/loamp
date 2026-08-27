@@ -238,6 +238,39 @@ RSpec.describe Loamp::UI::LibraryView do
     end
   end
 
+  describe 'empty library state' do
+    it 'shows a status page until music is indexed' do
+      empty = view.instance_variable_get(:@empty)
+      panes = view.instance_variable_get(:@panes)
+
+      expect(empty).to be_a(Adw::StatusPage)
+      expect(empty.get_property('visible')).to be(true)
+      expect(panes.get_property('visible')).to be(false)
+
+      stock_library
+      view.refresh
+
+      expect(empty.get_property('visible')).to be(false)
+      expect(panes.get_property('visible')).to be(true)
+    end
+  end
+
+  describe '#enqueue_track' do
+    before { stock_library }
+
+    it 'appends without replacing the queue' do
+      notices = []
+      view.on_notify { |text| notices << text }
+      playlist.add_track(AudioFixtures.sample_mp3)
+      row = track_row(0)
+
+      view.send(:enqueue_track, row)
+
+      expect(playlist.size).to eq(2)
+      expect(notices.last).to start_with('Queued')
+    end
+  end
+
   def track_row(position)
     view.instance_variable_get(:@tracks)[:store].get_item(position)
   end

@@ -68,11 +68,19 @@ module Loamp
 
       def start_themed_station(artist, mbid)
         seed = mbid || artist
-        @station = Radio::StationQueue.new(library: @library, graph: @graph_store, seed: seed)
+        station = Radio::StationQueue.new(library: @library, graph: @graph_store, seed: seed)
+        tracks = 10.times.filter_map { station.next_track }
+        if tracks.empty?
+          notify("No local tracks match #{artist} — add music to your library first")
+          return
+        end
+
+        @station = station
         @playlist.clear
-        10.times.filter_map { @station.next_track }.each { |track| @playlist.append(track) }
+        tracks.each { |track| @playlist.append(track) }
         @playlist.set_current_track(0)
         @playlist_view.refresh
+        @graph_view&.station_active(true)
         @player.stop
         @player.play
         notify("Started a station from #{artist}")
@@ -80,14 +88,22 @@ module Loamp
 
       def steer_station(action)
         track = @player.current_track
-        return unless @station && track
+        unless @station && track
+          notify('Start a station from Discover first')
+          return
+        end
 
         case action
-        when :up then @station.thumbs_up(track)
-        when :down then @station.thumbs_down(track)
-        when :ban then @station.ban_artist(track.artist)
+        when :up
+          @station.thumbs_up(track)
+          notify('Liked — more like this')
+        when :down
+          @station.thumbs_down(track)
+          notify('Less like this')
+        when :ban
+          @station.ban_artist(track.artist)
+          notify("Banned #{track.artist}")
         end
-        notify('Station preference saved')
       end
 
       def refill_station_queue
@@ -104,7 +120,10 @@ module Loamp
       end
 
       def wire_queue_view(view)
-        view.on_playlist_changed { @playlist_view.refresh }
+        view.on_playlist_changed do
+          @playlist_view.refresh
+          update_queue_empty_state
+        end
         view.on_notify { |message| notify(message) }
       end
 

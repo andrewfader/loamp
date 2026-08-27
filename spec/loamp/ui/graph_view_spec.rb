@@ -46,4 +46,17 @@ RSpec.describe Loamp::UI::GraphView do
 
     expect(requested).to be(true)
   end
+
+  it 'enables feedback only while a station is active' do
+    buttons = view.instance_variable_get(:@feedback_buttons) || {}
+    skip 'no feedback buttons' if buttons.empty?
+
+    expect(buttons.values).to all(satisfy { |b| !b.sensitive? })
+
+    view.station_active(true)
+    expect(buttons.values).to all(be_sensitive)
+
+    view.station_active(false)
+    expect(buttons.values).to all(satisfy { |b| !b.sensitive? })
+  end
 end

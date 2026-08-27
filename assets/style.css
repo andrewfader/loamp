@@ -85,22 +85,20 @@
 .loamp-console {
   padding: 14px 16px 12px;
   border-radius: 16px;
-  background-color: alpha(@loamp_ink, 0.54);
-  color: #e9f5f4;
-  border: 1px solid alpha(@loamp_cyan, 0.24);
-  box-shadow: 0 9px 24px rgba(0, 0, 0, 0.2), inset 0 1px alpha(white, 0.06);
+  background-color: alpha(@card_bg_color, 0.92);
+  border: 1px solid alpha(@loamp_cyan, 0.18);
+  box-shadow: 0 6px 18px alpha(black, 0.08);
 }
 
 .loamp-status {
-  color: alpha(currentColor, 0.45);
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 1px;
+  color: alpha(currentColor, 0.55);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
 }
 
 .loamp-console.is-playing .loamp-status {
   color: @loamp_orange;
-  text-shadow: 0 0 8px alpha(@loamp_orange, 0.55);
 }
 
 .loamp-console button.circular { min-width: 38px; min-height: 38px; }

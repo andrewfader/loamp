@@ -1,12 +1,13 @@
 # frozen_string_literal: true
 
 require 'spec_helper'
+require 'fileutils'
 
 RSpec.describe Loamp::UI::RadioView do
   before { skip_if_no_gtk }
 
   let(:station) do
-    Loamp::Radio::Station.new(name: 'KEXP', stream_uri: 'https://radio.test/live',
+    Loamp::Radio::Station.new(id: 'kexp', name: 'KEXP', stream_uri: 'https://radio.test/live',
                               country: 'United States', language: 'English', tags: ['indie'],
                               codec: 'AAC', bitrate: 128)
   end
@@ -98,5 +99,37 @@ RSpec.describe Loamp::UI::RadioView do
     view.shutdown
     expect(view.send(:finish_search, 0, [station])).to be(false)
     expect(view.visible_stations).to be_empty
+  end
+
+  it 'lists recently played stations under Recent' do
+    path = File.join(AudioFixtures.fixture_dir, "radio-recent-#{SecureRandom.hex(4)}.json")
+    store = Loamp::Radio::Store.new(path: path)
+    recent_view = described_class.new(browser, playlist, player, store: store)
+    allow(browser).to receive(:search).and_return([station])
+    recent_view.search_for('kexp')
+    wait_for_result { recent_view.visible_stations.any? }
+    allow(player).to receive(:play)
+
+    recent_view.play_station(0)
+    recent_view.show_history
+
+    expect(recent_view.visible_stations.map(&:name)).to include('KEXP')
+  ensure
+    recent_view&.shutdown
+    FileUtils.rm_f(path) if path
+  end
+
+  it 'lists favorite stations under Favorites' do
+    path = File.join(AudioFixtures.fixture_dir, "radio-fav-#{SecureRandom.hex(4)}.json")
+    store = Loamp::Radio::Store.new(path: path)
+    store.favorite(station)
+    fav_view = described_class.new(browser, playlist, player, store: store)
+
+    fav_view.show_favorites
+
+    expect(fav_view.visible_stations.map(&:name)).to eq(['KEXP'])
+  ensure
+    fav_view&.shutdown
+    FileUtils.rm_f(path) if path
   end
 end

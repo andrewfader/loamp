@@ -4,7 +4,11 @@ module Loamp
   module UI
     class GraphView < Gtk::Box
       NODE_RADIUS = 18
-      FEEDBACK_LABELS = { up: '👍', down: '👎', ban: 'Ban artist' }.freeze
+      FEEDBACK_ACTIONS = {
+        up: ['emblem-favorite-symbolic', 'More like this'],
+        down: ['action-unavailable-symbolic', 'Less like this'],
+        ban: ['edit-delete-symbolic', 'Never play this artist'],
+      }.freeze
 
       def initialize(similarity)
         super(:vertical, 6)
@@ -16,14 +20,21 @@ module Loamp
         @scale = 1.0
         @offset_x = 0
         @offset_y = 0
+        @station_active = false
         build_toolbar
         build_canvas
+        update_feedback_sensitivity
       end
 
       def on_start_station(&block) = (@callbacks[:start_station] = block)
       def on_feedback(&block) = (@callbacks[:feedback] = block)
       def on_adventure_changed(&block) = (@callbacks[:adventure] = block)
       def on_now_playing(&block) = (@callbacks[:now_playing] = block)
+
+      def station_active(value)
+        @station_active = !!value
+        update_feedback_sensitivity
+      end
 
       def seed(artist, mbid: nil, local: true)
         name = artist.to_s.strip
@@ -69,9 +80,13 @@ module Loamp
         box.append(@entry)
         box.append(@now_playing_button)
         box.append(@spinner)
-        %i[up down ban].each do |action|
-          button = Gtk::Button.new(label: FEEDBACK_LABELS[action])
+        @feedback_buttons = {}
+        FEEDBACK_ACTIONS.each do |action, (icon, tooltip)|
+          button = Gtk::Button.new
+          button.icon_name = icon
+          button.tooltip_text = tooltip
           button.signal_connect('clicked') { @callbacks[:feedback]&.call(action) }
+          @feedback_buttons[action] = button
           box.append(button)
         end
         adventure = Gtk::Scale.new(:horizontal, Gtk::Adjustment.new(0.5, 0, 1, 0.05, 0.1, 0))
@@ -90,6 +105,17 @@ module Loamp
         @status.margin_start = 12
         @status.margin_end = 12
         append(@status)
+
+        legend = Gtk::Label.new('Filled nodes are in your library · hollow nodes are discoveries')
+        legend.xalign = 0
+        legend.add_css_class('dim-label')
+        legend.margin_start = 12
+        legend.margin_end = 12
+        append(legend)
+      end
+
+      def update_feedback_sensitivity
+        @feedback_buttons&.each_value { |button| button.sensitive = @station_active }
       end
 
       def build_canvas
@@ -239,7 +265,7 @@ module Loamp
       end
 
       def idle_status
-        'Play a song and click Similar artists, or search for an artist above.'
+        'Search for an artist, click This track, or double-click a node to start a station.'
       end
     end
   end

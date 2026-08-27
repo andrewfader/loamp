@@ -2,6 +2,8 @@
 # frozen_string_literal: true
 
 require 'bundler/setup'
+require 'fileutils'
+require 'tmpdir'
 require_relative '../lib/loamp'
 
 # Small executable smoke suite used in addition to the RSpec suite.
@@ -48,9 +50,11 @@ module IntegrationTest
     end
 
     assert('speaks MPRIS to the desktop') { mpris_reachable?(player) }
+    assert('persists library auto-scan folders') { watch_folders_work? }
+    assert('resolves podcast directory listings') { podcast_directory_works? }
 
     engine.shutdown
-    puts '5/5 integration checks passed'
+    puts '7/7 integration checks passed'
   end
 
   # A build machine may have no session bus at all, which must not be read as
@@ -62,6 +66,34 @@ module IntegrationTest
 
     service.stop
     true
+  end
+
+  def watch_folders_work?
+    Dir.mktmpdir('loamp-watch') do |dir|
+      FileUtils.cp(FIXTURE, File.join(dir, 'a.mp3'))
+      library = Loamp::Library.new(path: Loamp::Library::IN_MEMORY)
+      library.add_watch_folder(dir)
+      roots = library.stored_watch_folders
+      library.remove_watch_folder(dir, remove_tracks: false)
+      library.close
+      roots == [File.expand_path(dir)] && File.directory?(dir)
+    end
+  end
+
+  def podcast_directory_works?
+    client = Object.new
+    def client.get(url, **)
+      body = if url.include?('toppodcasts')
+               '{"feed":{"entry":[{"id":{"attributes":{"im:id":"1"}}}]}}'
+             else
+               '{"results":[{"collectionName":"Show","artistName":"Host",' \
+                 '"feedUrl":"https://feeds.test/show","collectionId":1}]}'
+             end
+      Loamp::Http::Client::Response.new(status: 200, body: body)
+    end
+
+    listings = Loamp::Podcast::Directory.new(client: client).popular
+    listings.first&.title == 'Show' && listings.first.browsable?
   end
 end
 

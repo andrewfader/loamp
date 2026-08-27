@@ -149,7 +149,7 @@ module Loamp
       def create_widgets
         create_artwork_widgets
 
-        @eyebrow_label = Gtk::Label.new('NOW PLAYING  •  DECK A')
+        @eyebrow_label = Gtk::Label.new('NOW PLAYING')
         @eyebrow_label.add_css_class('loamp-kicker')
 
         @title_label = build_label('title-2')

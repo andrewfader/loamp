@@ -43,6 +43,7 @@ module Loamp
                                                               art_cache: @art_cache)
         @main_window.application = app
         @main_window.present
+        @main_window.auto_scan_library
         start_mpris(app)
         start_artwork_lookups
         start_lyrics_lookups

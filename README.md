@@ -98,9 +98,11 @@ thing behind them is available.
 
 The Library page starts empty. **Add Folder** indexes a music folder in the
 background — the UI stays live while it runs, and the page fills in as tracks
-land. Folders are remembered, so **Rescan Library** in the main menu picks up
-anything added or changed since. Overlapping folders are deduplicated rather
-than indexed twice.
+land. Folders are remembered as auto-scan paths, so launching LOAMP again (or
+choosing **Rescan Library** in the main menu) picks up anything added or
+changed since. Manage those paths under **Library Folders…**: add entire
+trees, or remove a folder (and its tracks) from the library. Overlapping
+folders are deduplicated rather than indexed twice.
 
 ### Keyboard shortcuts
 
@@ -130,8 +132,9 @@ artists, click a node to explore it, or double-click one to start a station.
 ListenBrainz supplies the default graph. Set `LOAMP_LASTFM_API_KEY` to enable
 Last.fm as a fallback for artists that cannot be resolved to a MusicBrainz ID.
 
-The Podcasts page takes an RSS or Atom feed URL and subscribes to it. Episodes
-remember where you stopped, and can be downloaded for offline listening.
+The Podcasts page opens with top charts from Apple’s podcast directory.
+Search by show name, double-click a result to subscribe, or paste an RSS/Atom
+URL. Episodes remember where you stopped; unsubscribe from My Shows.
 
 The Visualizer page is always present. Start it while audio is playing; its
 button tooltip shows the selected backend. Playback continues normally when
@@ -335,25 +338,20 @@ make coverage
 #### Test Structure
 ```
 spec/
-├── spec_helper.rb              # Test configuration
-├── support/                    # Test helpers and utilities
-│   ├── test_helpers.rb         #   Shared test helpers
-│   ├── gtk_helper.rb           #   GTK init, skipping when there is no display
-│   ├── stub_http_server.rb     #   Local HTTP server for network-facing specs
-│   ├── audio_fixtures.rb       #   Generated audio files
-│   └── screenshot_helper.rb    #   Window captures for UI specs
+├── spec_helper.rb              # SimpleCov (≥80%) + RSpec config
+├── support/                    # Helpers (GTK, audio fixtures, BDD aliases, async wait)
+├── features/                   # BDD-style feature scenarios (user journeys)
 ├── factories/                  # Test data factories
-│   ├── track_factory.rb        #   Track test data
-│   └── playlist_factory.rb     #   Playlist test data
 ├── loamp/                      # Unit tests, mirroring lib/loamp/
-│   ├── player_spec.rb, playlist_spec.rb, track_spec.rb, …
-│   ├── cover_art/, http/, library/, lyrics/, mpris/
-│   ├── podcast/, provider/, radio/
-│   └── ui/                     #   UI component tests
-├── integration_test.rb         # Integration tests
-├── real_audio_integration_spec.rb # Playback against generated audio files
-└── loamp_spec.rb               # Module tests
+│   └── ui/                     #   UI component + e2e visualizer specs
+├── integration_test.rb         # Smoke integration (playback, library, podcasts)
+├── real_audio_integration_spec.rb
+└── loamp_spec.rb
 ```
+
+Feature specs under `spec/features/` use `scenario`/`feature` aliases and
+`wait_until` for idle-driven GTK flows (podcast browse, auto-scan folders,
+queue polish, radio Recent, Discover).
 
 Specs that reach the network talk to a local stub server, so the suite runs
 offline. UI specs need a display and skip themselves without one; the MPRIS
@@ -367,14 +365,19 @@ puts them somewhere you can keep.
 The test suite covers:
 - **Core Logic**: Track metadata, playlist management, player state
 - **Playback**: Engine state transitions, and real decoding of generated files
-- **Library**: Scanning, schema migrations, and search ranking
-- **Services**: Radio, podcasts, lyrics, streaming providers and scrobbling,
-  each against a local stub HTTP server
+- **Library**: Scanning, schema migrations, search ranking, auto-scan folders
+- **Services**: Radio, podcasts (directory browse + subscribe), lyrics, streaming
+  providers and scrobbling, each against a local stub HTTP server
 - **Desktop Integration**: MPRIS adapter, D-Bus export and GVariant conversion
 - **UI Components**: GTK widgets and user interactions
-- **Integration**: End-to-end functionality testing
+- **BDD features**: User journeys under `spec/features/` (`scenario` aliases)
+- **Integration**: Smoke script plus e2e visualizer / screenshot specs
 - **Error Handling**: Graceful failure scenarios
 - **Edge Cases**: Boundary conditions and invalid inputs
+
+Coverage (SimpleCov, minimum **80%**) is opt-in via `COVERAGE=true` so a green
+suite is not poisoned by GTK teardown. CI sets that flag when uploading
+`coverage/coverage.json` to Codecov.
 
 ### Continuous Integration
 

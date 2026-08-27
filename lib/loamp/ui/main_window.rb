@@ -85,6 +85,17 @@ module Loamp
         @toast_overlay.add_toast(Adw::Toast.new(message))
       end
 
+      # Re-indexes every remembered auto-scan root. Called on launch when the
+      # listener has already pointed LOAMP at music folders.
+      def auto_scan_library
+        return false unless @library_view
+
+        folders = @library.stored_watch_folders
+        return false if folders.empty? || @library_view.scanning?
+
+        @library_view.scan(folders)
+      end
+
       private
 
       # Not GtkWidget::destroy: in GTK4 that signal is emitted from dispose, so
@@ -174,6 +185,7 @@ module Loamp
         menu.append('Open Playlist…', 'win.open-playlist')
         menu.append('Save Playlist…', 'win.save-playlist')
         menu.append('Clear Playlist', 'win.clear')
+        menu.append('Library Folders…', 'win.library-folders') if @library
         menu.append('Rescan Library', 'win.rescan') if @library
         menu.append('Internet Radio', 'win.show-radio') if @radio_browser
         menu.append('Similar Artists', 'win.show-discovery') if @radio_services
@@ -203,6 +215,7 @@ module Loamp
         self.content = @toast_overlay
 
         install_breakpoint
+        update_queue_empty_state
       end
 
       # Keeps the window usable when it is narrow, which is what makes an
@@ -234,10 +247,26 @@ module Loamp
         heading.append(title)
         heading.append(hint)
 
+        @queue_empty = Adw::StatusPage.new
+        @queue_empty.icon_name = 'emblem-music-symbolic'
+        @queue_empty.title = 'Queue is empty'
+        @queue_empty.description = 'Add files, open a playlist, or play something from the Library.'
+        @queue_empty.vexpand = true
+
         page.append(heading)
         page.append(child)
+        page.append(@queue_empty)
         child.vexpand = true
+        update_queue_empty_state
         page
+      end
+
+      def update_queue_empty_state
+        return unless @queue_empty && @playlist_view
+
+        empty = @playlist.empty?
+        @queue_empty.visible = empty
+        @playlist_view.visible = !empty
       end
 
       # Now Playing and Library are pages of one stack rather than two
@@ -305,11 +334,32 @@ module Loamp
         group.add_action(build_action('save-playlist') { save_playlist_dialog })
         group.add_action(build_action('clear') { clear_playlist })
         group.add_action(build_action('about') { show_about_dialog })
+        group.add_action(build_action('library-folders') { show_library_folders }) if @library
         group.add_action(build_action('rescan') { rescan_library }) if @library
         group.add_action(build_action('show-radio') { show_view('radio') }) if @radio_view
         group.add_action(build_action('show-discovery') { show_discovery }) if @graph_view
         PlaybackMenu.install_actions(group, @player)
         insert_action_group('win', group)
+      end
+
+      def show_library_folders
+        LibraryFoldersDialog.present(
+          self,
+          library: @library,
+          on_changed: method(:library_folder_changed)
+        )
+      end
+
+      def library_folder_changed(action, path)
+        case action
+        when :added
+          show_view('library')
+          started = @library_view.index_folder(path)
+          notify(started ? "Indexing #{File.basename(path)}" : 'A library scan is already running')
+        when :removed
+          @library_view.refresh
+          notify("Removed #{File.basename(path)} from the library")
+        end
       end
 
       def build_action(name, &)
@@ -342,9 +392,20 @@ module Loamp
                      files.to_a
                    end
         paths = selected.filter_map(&:path)
+        was_empty = @playlist.empty?
         paths.each { |path| @playlist.add_track(path) }
         @playlist_view.refresh
+        update_queue_empty_state
         notify(paths.size == 1 ? 'Added 1 track' : "Added #{paths.size} tracks")
+        autoplay_if_idle(was_empty)
+      end
+
+      def autoplay_if_idle(was_empty)
+        return unless was_empty && !@playlist.empty?
+        return if @player.playing?
+
+        @playlist.set_current_track(0)
+        @player.play
       end
 
       def audio_filters
@@ -395,6 +456,7 @@ module Loamp
         @player.stop
         @playlist.clear
         @playlist_view.refresh
+        update_queue_empty_state
         @track_info.clear
         update_window_title(nil)
         notify('Playlist cleared')

@@ -60,6 +60,8 @@ module Loamp
       def shutdown
         @shutdown = true
         @scanner.shutdown
+        @track_menu&.unparent
+        @track_menu = nil
         @handlers.each { |object, id| object.signal_handler_disconnect(id) }
         @handlers.clear
         [@artists, @albums, @tracks].each { |pane| pane[:store].remove_all }
@@ -85,6 +87,7 @@ module Loamp
         load_albums
         load_tracks
         update_summary
+        update_empty_state
       end
 
       # Indexes folders in the background; the UI stays live throughout.
@@ -162,7 +165,7 @@ module Loamp
         connect(@search_entry, 'search-changed') { load_tracks }
 
         @add_button = Gtk::Button.new(label: 'Add Folder')
-        @add_button.tooltip_text = 'Index a music folder'
+        @add_button.tooltip_text = 'Add a folder to auto-scan into the library'
         connect(@add_button, 'clicked') { choose_folder }
 
         @summary = Gtk::Label.new
@@ -171,6 +174,23 @@ module Loamp
 
         append(toolbar_box)
         append(progress_bar)
+        append(empty_state)
+      end
+
+      def empty_state
+        @empty = Adw::StatusPage.new
+        @empty.icon_name = 'folder-music-symbolic'
+        @empty.title = 'No music yet'
+        @empty.description = 'Add a music folder to build your library. ' \
+                             'Entire trees are indexed and scanned again on launch.'
+        button = Gtk::Button.new(label: 'Add Folder')
+        button.add_css_class('pill')
+        button.add_css_class('suggested-action')
+        button.halign = :center
+        connect(button, 'clicked') { choose_folder }
+        @empty.child = button
+        @empty.vexpand = true
+        @empty
       end
 
       def toolbar_box
@@ -201,9 +221,11 @@ module Loamp
         panes = split(browser, pane_frame(@tracks[:widget], scroll_sideways: true),
                       position: BROWSER_WIDTH)
         panes.vexpand = true
+        @panes = panes
 
         append(panes)
         append(summary_bar)
+        update_empty_state
       end
 
       def summary_bar
@@ -282,7 +304,39 @@ module Loamp
 
         connect(view, 'activate') { |_view, position| play_track(store.get_item(position)) }
 
+        gesture = Gtk::GestureClick.new
+        gesture.button = 3
+        gesture.signal_connect('pressed') do |_gesture, _n, x, y|
+          item = store.get_item(selection.selected) if selection.n_items.positive?
+          show_track_menu(item, view, x, y) if item
+        end
+        view.add_controller(gesture)
+
         { widget: view, store: store, selection: selection }
+      end
+
+      def show_track_menu(row, widget, x, y)
+        popover = Gtk::Popover.new
+        box = Gtk::Box.new(:vertical, 0)
+        play = Gtk::Button.new(label: 'Play')
+        play.add_css_class('flat')
+        play.signal_connect('clicked') do
+          popover.popdown
+          play_track(row)
+        end
+        queue = Gtk::Button.new(label: 'Add to Queue')
+        queue.add_css_class('flat')
+        queue.signal_connect('clicked') do
+          popover.popdown
+          enqueue_track(row)
+        end
+        box.append(play)
+        box.append(queue)
+        popover.child = box
+        popover.set_parent(widget)
+        popover.pointing_to = Gdk::Rectangle.new(x.to_i, y.to_i, 1, 1)
+        popover.popup
+        @track_menu = popover
       end
 
       def text_column(title, expand: false, fixed_width: nil, align: :start, &value)
@@ -404,6 +458,14 @@ module Loamp
         @summary.text = text
       end
 
+      def update_empty_state
+        empty = @library.empty?
+        @empty.visible = empty
+        @panes.visible = !empty
+        @summary.visible = !empty
+        @search_entry.sensitive = !empty
+      end
+
       # --- Selection ----------------------------------------------------------
 
       def select_artist(row)
@@ -418,7 +480,7 @@ module Loamp
 
       # Activating a track queues the whole visible list and starts at the one
       # that was chosen, which is what double-clicking a song in a library has
-      # always meant.
+      # always meant. Right-click enqueues without replacing Up Next.
       def play_track(row)
         return unless row&.item.is_a?(Track)
 
@@ -434,6 +496,15 @@ module Loamp
         announce_playlist_change
         @player.stop
         @player.play
+      end
+
+      def enqueue_track(row)
+        track = row&.item
+        return unless track.is_a?(Track)
+
+        @playlist.append(track)
+        announce_playlist_change
+        notify("Queued #{track.title}")
       end
 
       def announce_playlist_change

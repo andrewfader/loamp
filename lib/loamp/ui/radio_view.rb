@@ -62,7 +62,11 @@ module Loamp
       end
 
       def show_favorites
-        finish_search(@generation, @store.favorites)
+        finish_search(@generation, @store.favorites, empty: 'No favorite stations yet')
+      end
+
+      def show_history
+        finish_search(@generation, @store.history, empty: 'No recently played stations')
       end
 
       def load_popular
@@ -107,6 +111,10 @@ module Loamp
         @spinner = Gtk::Spinner.new
         favorites = Gtk::Button.new(label: 'Favorites')
         connect(favorites, 'clicked') { show_favorites }
+        recent = Gtk::Button.new(label: 'Recent')
+        connect(recent, 'clicked') { show_history }
+        popular = Gtk::Button.new(label: 'Popular')
+        connect(popular, 'clicked') { load_popular }
         @status = Gtk::Label.new('Search the worldwide Radio Browser directory')
         @status.xalign = 0
         @status.add_css_class('dim-label')
@@ -118,7 +126,9 @@ module Loamp
         toolbar.margin_end = 12
         toolbar.append(@search_entry)
         toolbar.append(button)
+        toolbar.append(popular)
         toolbar.append(favorites)
+        toolbar.append(recent)
         toolbar.append(@spinner)
         append(toolbar)
         append(@status)

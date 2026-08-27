@@ -31,5 +31,5 @@ group :test do
   gem 'faker', '~> 3.2'
   gem 'ostruct', '~> 0.6'
   gem 'rspec-mocks', '~> 3.12'
-  gem 'simplecov', '>= 0.22'
+  gem 'simplecov', '~> 0.22.0'
 end

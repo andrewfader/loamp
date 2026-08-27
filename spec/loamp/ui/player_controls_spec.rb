@@ -204,25 +204,23 @@ RSpec.describe Loamp::UI::PlayerControls do
     let(:controls) { described_class.new(player) }
 
     it 'seeks player position when scale is clicked' do
+      start_real_playback
+      controls.send(:update_controls)
       progress_scale = controls.instance_variable_get(:@progress_scale)
       expect(progress_scale).to be_a(Gtk::Scale)
+      expect(progress_scale.sensitive?).to be(true)
 
-      # Set up seeking behavior - simulate user clicking at position 60
+      # Hold @seeking so a position tick cannot overwrite the scale before release.
+      controls.instance_variable_set(:@seeking, true)
+      progress_scale.adjustment.upper = 180
       progress_scale.value = 60
-      expect(player).to receive(:seek).with(60)
+      allow(player).to receive(:seek)
 
-      # Simulate the gesture click sequence
       seek_gesture = progress_scale.observe_controllers.find { |c| c.is_a?(Gtk::GestureClick) }
-      if seek_gesture
-        controls.instance_variable_set(:@seeking, true)
-        seek_gesture.signal_emit('pressed', 1, 0, 0)
-        controls.instance_variable_set(:@seeking, false)
-        seek_gesture.signal_emit('released', 1, 0, 0)
-      else
-        # Fallback: directly call the seeking logic
-        controls.instance_variable_set(:@seeking, false)
-        progress_scale.signal_emit('button-release-event', nil)
-      end
+      expect(seek_gesture).to be_a(Gtk::GestureClick)
+      seek_gesture.signal_emit('released', 1, 0, 0)
+
+      expect(player).to have_received(:seek).with(a_value_within(0.01).of(60))
     end
 
     it 'lets the user seek while paused, but not while stopped' do
@@ -449,6 +447,53 @@ RSpec.describe Loamp::UI::PlayerControls do
       player.muted = true
 
       expect(controls.instance_variable_get(:@volume_value_label).text).to eq('Muted')
+    end
+
+    it 'toggles mute from the mute button' do
+      controls = described_class.new(player)
+      mute = controls.instance_variable_get(:@mute_button)
+
+      mute.active = true
+      expect(player.muted?).to be(true)
+      expect(mute.tooltip_text).to eq('Unmute')
+
+      mute.active = false
+      expect(player.muted?).to be(false)
+      expect(mute.tooltip_text).to eq('Mute')
+    end
+  end
+
+  describe 'live stream display' do
+    it 'shows Live and disables the seek bar for http streams' do
+      stream = Loamp::Track.new(
+        'https://radio.test/live.mp3',
+        metadata: Loamp::Metadata.new(title: 'Live', duration: 0)
+      )
+      playlist.append(stream)
+      playlist.set_current_track(0)
+      controls = described_class.new(player)
+      player.instance_variable_set(:@state, :playing)
+
+      controls.send(:update_controls)
+      controls.send(:update_progress, 12, 0)
+
+      expect(controls.instance_variable_get(:@duration_label).text).to eq('Live')
+      expect(controls.instance_variable_get(:@progress_scale).sensitive?).to be(false)
+    end
+  end
+
+  describe 'repeat suggested styling' do
+    it 'marks the repeat button when repeat is active' do
+      controls = described_class.new(player)
+      repeat = controls.instance_variable_get(:@repeat_button)
+
+      player.repeat_mode = :all
+      controls.send(:update_repeat_button_icon)
+      expect(repeat.css_classes).to include('suggested-action')
+
+      player.repeat_mode = :off
+      controls.send(:update_repeat_button_icon)
+      expect(repeat.css_classes).not_to include('suggested-action')
     end
   end
 end

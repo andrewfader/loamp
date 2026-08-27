@@ -108,9 +108,16 @@ module Loamp
     # parent so an overlapping pair is stored once, and Rescan walks these
     # rather than every album directory a track happens to sit in.
     def watch_folders
-      stored = database.execute('SELECT path FROM folders ORDER BY path')
-        .map { |row| row['path'] }
+      stored = stored_watch_folders
       stored.empty? ? inferred_watch_folders : stored
+    end
+
+    # Explicit auto-scan roots only — never the inferred album-dir fallback.
+    # The folders dialog and startup scan use this so a legacy index without
+    # stored roots does not suddenly walk every album directory.
+    def stored_watch_folders
+      database.execute('SELECT path FROM folders ORDER BY path')
+        .map { |row| row['path'] }
     end
 
     def add_watch_folder(directory)
@@ -119,6 +126,18 @@ module Loamp
 
       database.transaction { store_watch_folder(root) }
       true
+    end
+
+    # Stops auto-scanning a root. When remove_tracks is true (the default),
+    # every indexed file under that root leaves the library with it.
+    def remove_watch_folder(directory, remove_tracks: true)
+      root = File.expand_path(directory.to_s)
+      database.transaction do
+        database.execute('DELETE FROM folders WHERE path = ?', [root])
+        removed = database.changes.positive?
+        remove_tracks_under(root) if remove_tracks && removed
+        removed
+      end
     end
 
     # --- Reading ------------------------------------------------------------
@@ -305,6 +324,17 @@ module Loamp
 
     def nested?(path, under:)
       path.start_with?("#{under}#{File::SEPARATOR}")
+    end
+
+    def remove_tracks_under(root)
+      database.execute(
+        'DELETE FROM tracks WHERE path = ? OR path LIKE ? ESCAPE ?',
+        [root, "#{escape_like(root)}#{File::SEPARATOR}%", '\\']
+      )
+    end
+
+    def escape_like(value)
+      value.gsub(/[%_\\]/) { |char| "\\#{char}" }
     end
 
     # An index written before folders were stored has no roots to rescan.

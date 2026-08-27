@@ -352,6 +352,26 @@ RSpec.describe Loamp::UI::MainWindow do
       expect(capture_widget(main_window, 'main-window-file-added')).to end_with('.png')
     end
 
+    it 'autoplays when the first tracks land on an empty idle queue' do
+      files = Gio::ListStore.new(Gio::File.gtype)
+      files.append(Gio::File.new_for_path(AudioFixtures.sample_mp3))
+      allow(player).to receive(:play).and_call_original
+
+      main_window.send(:add_files, files)
+
+      expect(player).to have_received(:play)
+    end
+
+    it 'toggles the empty-queue status page as tracks arrive' do
+      empty = main_window.instance_variable_get(:@queue_empty)
+      expect(empty.get_property('visible')).to be(true)
+
+      playlist.add_track(AudioFixtures.sample_mp3)
+      main_window.send(:update_queue_empty_state)
+
+      expect(empty.get_property('visible')).to be(false)
+    end
+
     it 'can create file dialog without errors' do
       expect do
         dialog = Gtk::FileDialog.new
@@ -469,6 +489,43 @@ RSpec.describe Loamp::UI::MainWindow do
       pump_main_loop { library.count == 2 }
 
       expect(library.count).to eq(2)
+    end
+
+    it 'auto-scans stored folders without requiring a menu action' do
+      FileUtils.cp(AudioFixtures.sample_mp3, File.join(folder, 'a.mp3'))
+      library.add_watch_folder(folder)
+      window = build_window(player, playlist, library: library)
+
+      expect(window.auto_scan_library).to be true
+      pump_main_loop { library.count == 1 }
+
+      expect(library.count).to eq(1)
+    end
+
+    it 'offers a Library Folders menu item when a library is present' do
+      window = build_window(player, playlist, library: library)
+      menu = window.instance_variable_get(:@menu_button).menu_model
+      labels = Array.new(menu.n_items) do |index|
+        value = menu.get_item_attribute_value(index, 'label', nil)
+        next unless value
+
+        value.respond_to?(:get_string) ? value.get_string : value.to_s
+      end
+
+      expect(labels).to include('Library Folders…')
+    end
+
+    it 'indexes an entire folder tree when a library folder is added' do
+      nested = File.join(folder, 'Artist', 'Album')
+      FileUtils.mkdir_p(nested)
+      FileUtils.cp(AudioFixtures.sample_mp3, File.join(nested, 'deep.mp3'))
+      window = build_window(player, playlist, library: library)
+
+      window.send(:library_folder_changed, :added, folder)
+      pump_main_loop { library.count == 1 }
+
+      expect(library.count).to eq(1)
+      expect(library.stored_watch_folders).to eq([File.expand_path(folder)])
     end
   end
 end

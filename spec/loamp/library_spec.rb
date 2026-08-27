@@ -435,5 +435,42 @@ RSpec.describe Loamp::Library do
 
       expect(library.watch_folders).to eq([File.dirname(path)])
     end
+
+    it 'exposes stored roots separately from the inferred fallback' do
+      path = index(title: 'Falling', artist: 'Haim', album: 'Days Are Gone')
+
+      expect(library.stored_watch_folders).to be_empty
+      expect(library.watch_folders).to eq([File.dirname(path)])
+    end
+  end
+
+  describe '#remove_watch_folder' do
+    it 'forgets a stored root and drops tracks under it' do
+      nested = File.join(collection, 'Artist', 'Album')
+      FileUtils.mkdir_p(nested)
+      path = File.join(nested, 'song.mp3')
+      FileUtils.cp(AudioFixtures.tone(seconds: 1), path)
+      library.add_watch_folder(collection)
+      library.add(path, metadata: Loamp::Metadata.new(title: 'Song', artist: 'A', album: 'B'))
+
+      expect(library.remove_watch_folder(collection)).to be true
+
+      expect(library.stored_watch_folders).to be_empty
+      expect(library.count).to eq(0)
+    end
+
+    it 'can keep indexed tracks when only the watch root is removed' do
+      path = index(title: 'Keep Me', artist: 'A', album: 'B')
+      library.add_watch_folder(collection)
+
+      expect(library.remove_watch_folder(collection, remove_tracks: false)).to be true
+
+      expect(library.stored_watch_folders).to be_empty
+      expect(library).to include(path)
+    end
+
+    it 'returns false when the folder was not watched' do
+      expect(library.remove_watch_folder(collection)).to be false
+    end
   end
 end

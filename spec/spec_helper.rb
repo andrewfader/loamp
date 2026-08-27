@@ -1,13 +1,28 @@
 # frozen_string_literal: true
 
-require 'simplecov'
-SimpleCov.start do
-  add_filter '/spec/'
-  add_group 'Core', 'lib/loamp'
-  add_group 'UI', 'lib/loamp/ui'
-  minimum_coverage 80
+# Coverage is opt-in. Always-on reporting was colliding with GTK teardown on
+# Ruby 4 (process exit 139 after a green suite). CI sets COVERAGE=true.
+if ENV['COVERAGE']
+  require 'simplecov'
+  require 'simplecov_json_formatter'
+
+  SimpleCov.command_name 'RSpec'
+  SimpleCov.external_at_exit = true
+  SimpleCov.start do
+    add_filter '/spec/'
+    add_group 'Core', 'lib/loamp'
+    add_group 'UI', 'lib/loamp/ui'
+    minimum_coverage 80
+    formatter SimpleCov::Formatter::MultiFormatter.new(
+      [
+        SimpleCov::Formatter::SimpleFormatter,
+        SimpleCov::Formatter::JSONFormatter,
+      ]
+    )
+  end
 end
 
+require 'rspec'
 require 'gtk4'
 
 require 'base64'
@@ -41,5 +56,9 @@ RSpec.configure do |config|
 
   config.expect_with :rspec do |c|
     c.syntax = :expect
+  end
+
+  config.define_derived_metadata(file_path: %r{/spec/features/}) do |metadata|
+    metadata[:type] = :feature
   end
 end

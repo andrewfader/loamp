@@ -40,7 +40,8 @@ RSpec.describe Loamp::Application do
       instance_double(Adw::Application, run: 0, add_action: nil, set_accels_for_action: nil)
     end
     let(:main_window) do
-      instance_double(Loamp::UI::MainWindow, :application= => nil, present: nil, show_lyrics: nil)
+      instance_double(Loamp::UI::MainWindow, :application= => nil, present: nil,
+                                            show_lyrics: nil, auto_scan_library: false)
     end
 
     before do
@@ -72,6 +73,12 @@ RSpec.describe Loamp::Application do
       application.run
 
       expect(application.instance_variable_get(:@main_window)).to equal(main_window)
+    end
+
+    it 'auto-scans remembered library folders on launch' do
+      expect(main_window).to receive(:auto_scan_library)
+
+      application.run
     end
 
     it 'attaches the window to the GTK application' do
@@ -136,7 +143,8 @@ RSpec.describe Loamp::Application do
     end
     let(:main_window) do
       instance_double(Loamp::UI::MainWindow, :application= => nil, present: nil,
-                                             artwork_arrived: nil, show_lyrics: nil)
+                                             artwork_arrived: nil, show_lyrics: nil,
+                                             auto_scan_library: false)
     end
     let(:track) { AudioFixtures.track_with(artist: 'Radiohead', album: 'OK Computer') }
 
@@ -190,7 +198,8 @@ RSpec.describe Loamp::Application do
                                         quit: nil)
     end
     let(:main_window) do
-      instance_double(Loamp::UI::MainWindow, :application= => nil, present: nil, show_lyrics: nil)
+      instance_double(Loamp::UI::MainWindow, :application= => nil, present: nil,
+                                            show_lyrics: nil, auto_scan_library: false)
     end
 
     before do

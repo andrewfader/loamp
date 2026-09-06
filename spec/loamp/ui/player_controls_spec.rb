@@ -38,6 +38,14 @@ RSpec.describe Loamp::UI::PlayerControls do
       expect(position_label.text).to eq('1:05')
     end
 
+    it 'distinguishes paused from stopped in the visible status' do
+      controls = described_class.new(player)
+
+      controls.send(:update_play_pause_button, :paused)
+
+      expect(controls.instance_variable_get(:@state_label).text).to eq('Paused')
+    end
+
     it 'initializes volume scale with player volume' do
       allow(player).to receive(:volume).and_return(50)
       controls = described_class.new(player)

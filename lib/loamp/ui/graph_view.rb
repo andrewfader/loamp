@@ -32,7 +32,7 @@ module Loamp
       def on_now_playing(&block) = (@callbacks[:now_playing] = block)
 
       def station_active(value)
-        @station_active = !!value
+        @station_active = value ? true : false
         update_feedback_sensitivity
       end
 
@@ -62,56 +62,77 @@ module Loamp
       private
 
       def build_toolbar
-        @entry = Gtk::Entry.new
-        @entry.placeholder_text = 'Search for an artist'
-        @entry.hexpand = true
-        @entry.signal_connect('activate') { seed(@entry.text) unless @entry.text.to_s.strip.empty? }
+        append(toolbar_box)
+        append(status_label)
+        append(legend_label)
+      end
 
-        @now_playing_button = Gtk::Button.new(label: 'This track')
-        @now_playing_button.tooltip_text = 'Show artists similar to what is playing'
-        @now_playing_button.signal_connect('clicked') { @callbacks[:now_playing]&.call }
-
-        @spinner = Gtk::Spinner.new
-
+      def toolbar_box
         box = Gtk::Box.new(:horizontal, 6)
         box.margin_top = 12
         box.margin_start = 12
         box.margin_end = 12
-        box.append(@entry)
-        box.append(@now_playing_button)
-        box.append(@spinner)
-        @feedback_buttons = {}
-        FEEDBACK_ACTIONS.each do |action, (icon, tooltip)|
+        box.append(search_entry)
+        box.append(now_playing_button)
+        box.append(@spinner = Gtk::Spinner.new)
+        feedback_buttons.each { |button| box.append(button) }
+        box.append(adventure_scale)
+        box
+      end
+
+      def search_entry
+        @entry = Gtk::Entry.new
+        @entry.placeholder_text = 'Search for an artist'
+        @entry.hexpand = true
+        @entry.signal_connect('activate') { seed(@entry.text) unless @entry.text.to_s.strip.empty? }
+        @entry
+      end
+
+      def now_playing_button
+        @now_playing_button = Gtk::Button.new(label: 'This track')
+        @now_playing_button.tooltip_text = 'Show artists similar to what is playing'
+        @now_playing_button.signal_connect('clicked') { @callbacks[:now_playing]&.call }
+        @now_playing_button
+      end
+
+      # Thumbs up, thumbs down and ban, which mean nothing until a station is
+      # playing — #update_feedback_sensitivity is what greys them out.
+      def feedback_buttons
+        @feedback_buttons = FEEDBACK_ACTIONS.to_h do |action, (icon, tooltip)|
           button = Gtk::Button.new
           button.icon_name = icon
           button.tooltip_text = tooltip
           button.signal_connect('clicked') { @callbacks[:feedback]&.call(action) }
-          @feedback_buttons[action] = button
-          box.append(button)
+          [action, button]
         end
-        adventure = Gtk::Scale.new(:horizontal, Gtk::Adjustment.new(0.5, 0, 1, 0.05, 0.1, 0))
-        adventure.width_request = 120
-        adventure.tooltip_text = 'Familiar ↔ adventurous'
-        adventure.signal_connect('value-changed') do
-          @callbacks[:adventure]&.call(adventure.value)
-        end
-        box.append(adventure)
-        append(box)
+        @feedback_buttons.values
+      end
 
+      def adventure_scale
+        scale = Gtk::Scale.new(:horizontal, Gtk::Adjustment.new(0.5, 0, 1, 0.05, 0.1, 0))
+        scale.width_request = 120
+        scale.tooltip_text = 'Familiar ↔ adventurous'
+        scale.signal_connect('value-changed') { @callbacks[:adventure]&.call(scale.value) }
+        scale
+      end
+
+      def status_label
         @status = Gtk::Label.new(idle_status)
         @status.xalign = 0
         @status.wrap = true
         @status.add_css_class('dim-label')
         @status.margin_start = 12
         @status.margin_end = 12
-        append(@status)
+        @status
+      end
 
+      def legend_label
         legend = Gtk::Label.new('Filled nodes are in your library · hollow nodes are discoveries')
         legend.xalign = 0
         legend.add_css_class('dim-label')
         legend.margin_start = 12
         legend.margin_end = 12
-        append(legend)
+        legend
       end
 
       def update_feedback_sensitivity

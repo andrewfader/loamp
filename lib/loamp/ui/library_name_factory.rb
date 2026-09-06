@@ -5,14 +5,16 @@ module Loamp
     module LibraryNameFactory
       module_function
 
-      def build
+      # +on_context+, when one is given, is a proc that every row this factory
+      # builds reports its right-clicks to. See UI::RowGesture.
+      def build(on_context = nil)
         Gtk::SignalListItemFactory.new.tap do |factory|
-          factory.signal_connect('setup') { |_source, item| setup(item) }
+          factory.signal_connect('setup') { |_source, item| setup(item, on_context) }
           factory.signal_connect('bind') { |_source, item| bind(item) }
         end
       end
 
-      def setup(list_item)
+      def setup(list_item, on_context = nil)
         row_box = Gtk::Box.new(:horizontal, 8)
         row_box.margin_top = 4
         row_box.margin_bottom = 4
@@ -29,6 +31,7 @@ module Loamp
         labels.append(label(secondary: true))
         row_box.append(image)
         row_box.append(labels)
+        RowGesture.attach(row_box, list_item, on_context)
         list_item.child = row_box
       end
 

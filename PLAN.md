@@ -31,6 +31,14 @@ Done:
   scanner that reports through `GLib::Idle`. 10k tracks index in 1.4s once
   tags are read, rescan of an unchanged folder takes 0.37s, and search
   answers in about 5ms.
+- **Folders by pattern** (`lib/loamp/library/folder_glob.rb`,
+  `lib/loamp/ui/library_glob_dialog.rb`) — a shell-style pattern such as
+  `/mnt/**/downloads*` expands to the folders it names, with a dry run that
+  reports each match and its track count before anything is written. The walk
+  runs on a worker thread and caps at `MAX_MATCHES` folders; matches nested
+  inside other matches collapse, matching what the index does when it stores
+  a root. Selected folders are added as one batch so a twenty-folder pattern
+  starts one scan.
 - **Library browser** (`lib/loamp/ui/library_view.rb`) — artists, albums and
   tracks as three linked panes with a search box, on a `Adw::ViewStack` page
   beside Now Playing.
@@ -41,7 +49,7 @@ Done:
   freeform atoms, and the library index stores them. Item 6 needs exactly
   these to key its similarity graph.
 
-Suite: 689 examples, 0 failures, 80%+ enforced line coverage, rubocop clean,
+Suite: 945 examples, 0 failures, 80%+ enforced line coverage, rubocop clean,
 plus a real Wayland/GStreamer visualizer render test.
 
 ---
@@ -299,6 +307,25 @@ Hard-won during the work already done:
 - GStreamer's `about-to-finish` fires on the streaming thread. An engine that
   is dropped without `#shutdown` while its pipeline still runs segfaults, which
   is why `#shutdown` disconnects the handler.
+- **`gtk4paintablesink` needs a thread boundary in front of it.** It hands each
+  frame to the GTK main loop and waits, so whatever pushes into it is parked
+  inside the sink most of the time — holding the stream lock. Taking that
+  upstream element to NULL then blocks until the track ends rather than for the
+  few milliseconds it looks like it should: measured at 4.0s into a 5s tone and
+  11.0s into a 12s one, and instant against a `fakesink`. A
+  `queue leaky=downstream max-size-buffers=2` before the sink puts the queue's
+  own thread in that waiting position instead, which is also what a visualizer
+  wants — the newest frame, never a backlog. Both visualizer chains have one.
+  Adding `GST_DEBUG` hides the whole thing by slowing the branch down.
+- **`gtk4paintablesink`'s state may only be changed from the main thread.** Its
+  Rust `ThreadGuard` does not raise, it `abort()`s the process: "Value accessed
+  from different thread than where it was created". So the bounce in
+  `CrossfadeEngine#restart_visualizer` can take the plugin element down from a
+  worker but never the sink.
+- A `Gtk::Popover` parented with `set_parent` is also easy to leak one-per-
+  click: building a fresh one on every right-click leaves each previous one
+  parented to the list. Keep one and re-point it — `UI::LibraryRowMenu` is
+  the shape.
 - A `Gtk::Popover` parented with `set_parent` **must be unparented** before it
   is finalised. GTK warns "still has children left" and the dangling parent
   turns into a segfault in an unrelated spec later. `PlaylistView#shutdown`
@@ -358,3 +385,60 @@ Hard-won during the work already done:
   `PlayerControls` and `PlaylistView` each registered `on_track_changed` and
   only the last one ever ran — worth checking whether anything else in the UI
   was quietly relying on the broken behaviour.
+
+## Interface polish
+
+A running record of the discoverability work, which is separate from the
+feature list above: what a control does has to be visible without folklore.
+
+Landed:
+
+- The queue footer counts what is queued and how long it runs, and its Clear
+  action greys out when there is nothing to clear. Queue mutations made inside
+  `PlaylistView` (Delete, reorder, the row menu) now reach the shell through
+  `#on_changed`, so the empty state and the summary cannot drift apart from
+  the queue they describe.
+- `Ctrl`+`F` opens the Library page with the caret in its search box, and
+  `Ctrl`+`O` adds files. The shortcut asks `LibraryView#focus_search` rather
+  than reaching into the view for its entry widget.
+- The library row menu (`UI::LibraryRowMenu`) spells out **Play**, **Play
+  Next** and **Add to Queue**. Before this, "activation replaces the queue,
+  right-click appends" was undiscoverable, and the menu leaked a popover per
+  click — see the gotcha above.
+- Every library pane carries that menu, not just the track list. An album or
+  artist row stands for everything under it, and its menu acts on exactly the
+  tracks clicking the row would list — including the "All Artists" and "All
+  Albums" rows, which stand for the whole library and the whole artist. The
+  popover is headed with the row's name, because three unqualified words over
+  a whole record are not enough to act on with any confidence.
+- A right-click acts on the row it landed on rather than on whatever happened
+  to be selected. Which row a click found is only knowable from a gesture the
+  row itself carries, so `LibraryNameFactory` builds one per row and the track
+  columns do the same; the click is then translated out of the row's own
+  coordinates into the list the popover hangs off.
+- A search that matches nothing says so over the track list. An empty
+  `Gtk::ColumnView` otherwise looks the same as a search that failed to run.
+- The transport reports `Paused` distinctly from `Stopped`, and the shuffle
+  button starts in whatever state the player is actually in.
+
+- The row menu answers to the keyboard as well as the pointer. `Menu` and
+  `Shift`+`F10` open it on the selected row in all three panes, which is what
+  every other GTK context menu does; Play Next and Add to Queue are no longer
+  mouse-only. There is no pointer position to anchor it to, so the popover
+  points at whatever inside the list holds the focus — in a column view that
+  is a cell rather than the row, which is close enough to be on the right row
+  — and falls back to the top of the list when the focus is elsewhere. `F10`
+  on its own stays the menubar's, and a press that opens nothing is left for
+  whoever else wanted it rather than swallowed.
+- Choosing an album no longer refills the album pane. Which albums exist
+  depends on the artist alone, so the refill only ever spliced out the row
+  that had just been chosen and took the selection with it — the pane could
+  not say which album it was narrowed to, and the keyboard menu had no row to
+  act on. `#redraw_album_art` already stood down once an album was picked, for
+  the same reason.
+
+Worth doing next:
+
+- The queue's own context menu (`PlaylistView#show_context_menu`) is still
+  right-click only. `UI::RowGesture.attach_menu_key` is what the library panes
+  use and would fit there too.

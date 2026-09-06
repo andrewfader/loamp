@@ -56,9 +56,13 @@ module Loamp
         toolbar = Gtk::Box.new(:horizontal, 6)
         add = Gtk::Button.new(label: 'Add Folder')
         add.signal_connect('clicked') { choose_folder }
+        pattern = Gtk::Button.new(label: 'Add by Pattern…')
+        pattern.tooltip_text = 'Match many folders at once, such as /mnt/**/downloads*'
+        pattern.signal_connect('clicked') { choose_by_pattern }
         close = Gtk::Button.new(label: 'Close')
         close.signal_connect('clicked') { @dialog.close }
         toolbar.append(add)
+        toolbar.append(pattern)
         toolbar.append(close)
         box.append(toolbar)
 
@@ -142,6 +146,17 @@ module Loamp
         end
       end
 
+      # The pattern dialog runs its own dry run and adds the whole selection
+      # at once, so what comes back is a batch rather than a single path.
+      def choose_by_pattern
+        LibraryGlobDialog.present(@parent, library: @library, on_added: method(:added_by_pattern))
+      end
+
+      def added_by_pattern(paths)
+        rebuild_rows
+        @on_changed&.call(:added_batch, paths)
+      end
+
       def add_folder(path)
         return notify('That path is not a folder') unless @library.add_watch_folder(path)
 
@@ -152,7 +167,7 @@ module Loamp
       def remove_folder(path)
         dialog = Adw::AlertDialog.new(
           'Remove library folder?',
-          "Stop scanning #{File.basename(path)} and remove its tracks from the library?"
+          "Stop scanning #{File.basename(path)} and remove its tracks from the library?",
         )
         dialog.add_response('cancel', 'Cancel')
         dialog.add_response('remove', 'Remove')

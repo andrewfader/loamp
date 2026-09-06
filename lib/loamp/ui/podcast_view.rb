@@ -262,8 +262,8 @@ module Loamp
         if @mode == :discover
           listing = @listings[index]
           subscribe(listing.feed_url) if listing
-        else
-          play_episode(0) if @episodes.any?
+        elsif @episodes.any?
+          play_episode(0)
         end
       end
 

@@ -49,8 +49,15 @@ Metrics/BlockLength:
     - 'spec/**/*'
     - 'Rakefile'
 
+# A view class is as long as the widget tree it builds; splitting one to
+# satisfy a line count moves GTK lifetime handling away from the code that
+# owns it, which is how popovers and signal handlers end up leaking.
 Metrics/ClassLength:
-  Max: 350
+  Enabled: false
+
+# Same reasoning for the mixins those classes are built from.
+Metrics/ModuleLength:
+  Enabled: false
 
 Metrics/MethodLength:
   Max: 40

@@ -45,8 +45,15 @@ module Loamp
       @playbin = playbin
       @plugin ||= build(@name)
       presets.element = @plugin
+      # The leaky queue gives the sink its own thread. gtk4paintablesink waits
+      # on the GTK main loop for every frame, and #restart drops and restores
+      # the vis flag from that same main loop -- which is a deadlock if the
+      # plugin's streaming thread is parked inside the sink at the time. It
+      # leaks downstream because a visualizer wants the newest frame rather
+      # than a queue of stale ones.
       @video_sink ||= Gst.parse_bin_from_description(
         'videoconvert ! video/x-raw(memory:SystemMemory),format=RGBA ! ' \
+        'queue leaky=downstream max-size-buffers=2 ! ' \
         'gtk4paintablesink name=loamp-visualizer-sink',
         true,
       )

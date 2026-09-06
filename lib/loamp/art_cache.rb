@@ -25,6 +25,13 @@ module Loamp
 
     DEFAULT_EXTENSION = '.img'
 
+    # The size the library browser draws album rows at.
+    THUMBNAIL_SIZE = 64
+
+    # Stands in for "not looked up yet" in the memo, because nil is a real
+    # answer there: a track with no art anywhere is remembered as having none.
+    MISSING = Object.new
+
     attr_reader :directory
 
     # The fetcher is built on first use rather than here, so a cache that is
@@ -37,6 +44,7 @@ module Loamp
       @fetcher = fetcher
       @miss_log = miss_log
       @pending = {}
+      @thumbnail_misses = {}
       @threads = []
       @mutex = Mutex.new
     end
@@ -51,33 +59,71 @@ module Loamp
     def url_for(track)
       return nil unless track&.file_path
 
-      @urls.fetch(track.file_path) do
-        @urls[track.file_path] = resolve(track)
-      end
+      key = track.file_path
+      remembered = @mutex.synchronize { @urls.fetch(key, MISSING) }
+      return remembered unless remembered.equal?(MISSING)
+
+      # Resolved outside the lock, because resolving reads a tag off disk and
+      # the main loop may be asking about another track meanwhile. Two threads
+      # racing on one file do the work twice and agree about the answer.
+      url = resolve(track)
+      @mutex.synchronize { @urls[key] = url }
     end
 
+    # Art on disk is the one thing that can change under the cache, so
+    # forgetting a track forgets what could not be built from it as well.
     def forget(track = nil)
-      track ? @urls.delete(track.file_path) : @urls.clear
+      @mutex.synchronize do
+        track ? @urls.delete(track.file_path) : @urls.clear
+        @thumbnail_misses.clear
+      end
     end
 
     # A list-row-sized copy, cached separately from the full cover used by
     # Now Playing and MPRIS. Folder and embedded art therefore decode once.
-    def thumbnail_for(track, size: 64)
-      source_url = url_for(track)
-      source = FileUri.to_path(source_url)
-      return nil unless source
+    def thumbnail_for(track, size: THUMBNAIL_SIZE)
+      cached_thumbnail(track, size: size) || build_thumbnail(track, size: size)
+    end
 
-      path = File.join(@directory, "#{cache_key(track)}-#{size}.png")
-      return FileUri.for(path) if File.file?(path) && !File.empty?(path)
+    # The thumbnail this track's album already has on disk, or nil.
+    #
+    # A stat and nothing more: no tag read, no folder walk, no decode. The
+    # library browser asks this for every album in the collection each time it
+    # fills its middle pane, on the main loop, so it has to answer in
+    # microseconds.
+    def cached_thumbnail(track, size: THUMBNAIL_SIZE)
+      return nil unless track&.file_path
 
-      pixbuf = GdkPixbuf::Pixbuf.new(file: source)
-      width, height = thumbnail_dimensions(pixbuf.width, pixbuf.height, size)
-      thumbnail = pixbuf.scale_simple(width, height, :bilinear)
-      FileUtils.mkdir_p(@directory)
-      thumbnail.save(path, 'png')
-      FileUri.for(path)
-    rescue StandardError
-      nil
+      path = thumbnail_path(track, size)
+      FileUri.for(path) if File.file?(path) && !File.empty?(path)
+    end
+
+    # Builds the thumbnails a list is about to want, away from the main loop.
+    #
+    # Building one reads a tag, decodes an image and scales it — two or three
+    # milliseconds, and a collection has thousands of albums. On the main
+    # thread that is a window frozen for half a minute, and a frozen client
+    # stops reading its Wayland socket: the compositor eventually gives up and
+    # hangs up on the process, which the listener sees as a crash.
+    #
+    # Both callbacks are delivered on the main loop, so they may touch
+    # widgets. Returns false when every thumbnail asked for already exists,
+    # which callers use to tell real work from a redraw.
+    def warm_thumbnails(tracks, size: THUMBNAIL_SIZE, batch: 64, on_progress: nil, on_finished: nil)
+      return false if @detached || warming?
+
+      pending = Array(tracks).compact.reject { |track| thumbnail_settled?(track, size) }
+      return false if pending.empty?
+
+      @warm_thread = Thread.new { warm(pending, size, batch, on_progress, on_finished) }
+      remember(@warm_thread)
+      true
+    end
+
+    # One warm at a time: a redraw part way through a batch must not start a
+    # second thread over the thumbnails the first is still building.
+    def warming?
+      @warm_thread&.alive? || false
     end
 
     # Looks for cover art on the network for a track that has none locally.
@@ -108,7 +154,7 @@ module Loamp
       # fetcher would each get one, and with it a rate limiter of its own,
       # which is exactly the thing a rate limiter cannot have.
       resolver = fetcher
-      @threads << Thread.new { look_up(resolver, track, key, on_resolved) }
+      remember(Thread.new { look_up(resolver, track, key, on_resolved) })
       true
     end
 
@@ -124,8 +170,8 @@ module Loamp
     # results still arrive. For tests, and for anything that wants the network
     # answer before it carries on.
     def wait(timeout: nil)
-      @threads.each { |thread| thread.join(timeout) }
-      @threads.clear
+      running = @mutex.synchronize { @threads.dup.tap { @threads.clear } }
+      running.each { |thread| thread.join(timeout) }
       true
     end
 
@@ -138,6 +184,80 @@ module Loamp
     end
 
     private
+
+    def warm(tracks, size, batch, on_progress, on_finished)
+      tracks.each_with_index do |track, index|
+        break if @detached
+
+        build_thumbnail(track, size: size)
+        idle { on_progress&.call } if ((index + 1) % batch).zero?
+      end
+
+      idle { on_finished&.call }
+    end
+
+    # Everything a warm has no more to do about: a thumbnail already on disk,
+    # a track looked up and found to have no art anywhere, and a cover that
+    # has already refused to decode.
+    #
+    # Skipping those is what makes warming settle. A collection always has
+    # albums with no usable cover, and warming ends by asking the list to fill
+    # itself again — one that kept finding work to do would fill it forever.
+    def thumbnail_settled?(track, size)
+      return true if cached_thumbnail(track, size: size)
+
+      @mutex.synchronize do
+        @urls.fetch(track.file_path, MISSING).nil? ||
+          @thumbnail_misses.key?(thumbnail_path(track, size))
+      end
+    end
+
+    # Held only for this run: art that failed to decode is usually art that
+    # was written badly, and the next launch deserves a fresh try at it.
+    def record_thumbnail_miss(path)
+      @mutex.synchronize { @thumbnail_misses[path] = true } if path
+      nil
+    end
+
+    # Dead threads are dropped as new ones arrive: a long session changes
+    # track thousands of times, and every change may start a lookup.
+    def remember(thread)
+      @mutex.synchronize do
+        @threads.reject!(&:alive?)
+        @threads << thread
+      end
+    end
+
+    def thumbnail_path(track, size)
+      File.join(@directory, "#{cache_key(track)}-#{size}.png")
+    end
+
+    # Nil for art that is missing or will not decode, and the failure is
+    # remembered either way: without that, an album whose cover is a truncated
+    # download is work the warm finds again every time it looks.
+    def build_thumbnail(track, size:)
+      path = thumbnail_path(track, size)
+      source = FileUri.to_path(url_for(track))
+      return record_thumbnail_miss(path) unless source
+
+      pixbuf = GdkPixbuf::Pixbuf.new(file: source)
+      width, height = thumbnail_dimensions(pixbuf.width, pixbuf.height, size)
+      write_thumbnail(pixbuf.scale_simple(width, height, :bilinear), path)
+      FileUri.for(path)
+    rescue StandardError
+      record_thumbnail_miss(path)
+    end
+
+    # Completed under a name of its own and moved into place. A reader only
+    # stats the file, so one that appeared half-written would be handed to GTK
+    # as a truncated image — and the main loop builds these too, on the same
+    # paths as the warm thread.
+    def write_thumbnail(thumbnail, path)
+      FileUtils.mkdir_p(@directory)
+      temporary = "#{path}.#{Process.pid}.#{Thread.current.object_id}.tmp"
+      thumbnail.save(temporary, 'png')
+      File.rename(temporary, path)
+    end
 
     def resolve(track)
       beside = Artwork.find_folder_art(File.dirname(track.file_path.to_s))
@@ -169,7 +289,7 @@ module Loamp
 
     def finish(track, key, result, path, on_resolved)
       url = path && FileUri.for(path)
-      @urls[track.file_path] = url if url
+      @mutex.synchronize { @urls[track.file_path] = url } if url
       miss_log.record(key) if !url && result.definitive?
 
       release_and_report(key, url, on_resolved)

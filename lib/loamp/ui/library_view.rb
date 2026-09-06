@@ -24,6 +24,9 @@ module Loamp
 
       # Starting widths only: the panes are draggable, because how much room
       # artists deserve against titles depends entirely on the collection.
+      # How often the album pane is rebuilt while covers are being built for it.
+      ART_REDRAW_INTERVAL = 2.0
+
       ARTIST_PANE_WIDTH = 170
       BROWSER_WIDTH = 350
 
@@ -37,6 +40,8 @@ module Loamp
         @scanner = Library::Scanner.new(library)
         @callbacks = {}
         @handlers = []
+        @menus = {}
+        @contexts = {}
         @artist = :any
         @album = :any
 
@@ -60,8 +65,8 @@ module Loamp
       def shutdown
         @shutdown = true
         @scanner.shutdown
-        @track_menu&.unparent
-        @track_menu = nil
+        @menus.each_value(&:shutdown)
+        @menus.clear
         @handlers.each { |object, id| object.signal_handler_disconnect(id) }
         @handlers.clear
         [@artists, @albums, @tracks].each { |pane| pane[:store].remove_all }
@@ -105,10 +110,19 @@ module Loamp
       # Remembers the folder as a watch root, then indexes it. Rescan walks
       # these roots so a new album next to an existing one is not missed.
       def index_folder(path)
+        index_folders([path])
+      end
+
+      # Same, for a batch — a path pattern that matched twenty folders wants
+      # one scan across all of them, not twenty that queue behind each other.
+      def index_folders(paths)
         return false if @shutdown
 
-        @library.add_watch_folder(path)
-        scan([path])
+        roots = Array(paths)
+        return false if roots.empty?
+
+        roots.each { |path| @library.add_watch_folder(path) }
+        scan(roots)
       end
 
       def scanning?
@@ -118,10 +132,17 @@ module Loamp
       # Narrows the view the way clicking the panes does. `:any` means "do not
       # filter on this", which is not the same as filtering on nil — a track
       # with no album tag at all is a real thing to browse to.
+      #
+      # Which albums exist depends on the artist and nothing else, so picking
+      # an album leaves that pane alone. Refilling it would splice out the row
+      # that was just chosen and take the selection with it, leaving the pane
+      # unable to say which album it is showing — the same reason
+      # #redraw_album_art stands down once an album has been picked.
       def browse(artist: :any, album: :any)
+        artist_changed = artist != @artist
         @artist = artist
         @album = album
-        load_albums
+        load_albums if artist_changed
         load_tracks
       end
 
@@ -131,6 +152,15 @@ module Loamp
       def search_for(text)
         @search_entry.text = text.to_s
         load_tracks
+      end
+
+      # Ctrl+F reaches the library from anywhere in the window. Where the
+      # caret lands is this view's business, not the shortcut handler's.
+      def focus_search
+        return false if @shutdown || @search_entry.nil?
+
+        @search_entry.grab_focus
+        true
       end
 
       # What each pane is showing, in order.
@@ -212,14 +242,13 @@ module Loamp
       end
 
       def build_panes
-        @artists = list_pane { |row| select_artist(row) }
-        @albums = list_pane { |row| select_album(row) }
+        @artists = list_pane(:artist) { |row| select_artist(row) }
+        @albums = list_pane(:album) { |row| select_album(row) }
         @tracks = track_pane
 
         browser = split(pane_frame(@artists[:widget]), pane_frame(@albums[:widget]),
                         position: ARTIST_PANE_WIDTH)
-        panes = split(browser, pane_frame(@tracks[:widget], scroll_sideways: true),
-                      position: BROWSER_WIDTH)
+        panes = split(browser, track_frame, position: BROWSER_WIDTH)
         panes.vexpand = true
         @panes = panes
 
@@ -235,6 +264,32 @@ module Loamp
         box.margin_bottom = 6
         box.append(@summary)
         box
+      end
+
+      # The track list with its own "nothing here" message layered over it.
+      # An empty Gtk::ColumnView is otherwise indistinguishable from a broken
+      # one: a search that matches nothing looks exactly like a search that
+      # failed to run.
+      def track_frame
+        overlay = Gtk::Overlay.new
+        overlay.child = pane_frame(@tracks[:widget], scroll_sideways: true)
+        overlay.add_overlay(track_placeholder)
+        overlay
+      end
+
+      def track_placeholder
+        @track_placeholder = Gtk::Label.new
+        @track_placeholder.add_css_class('dim-label')
+        @track_placeholder.wrap = true
+        @track_placeholder.justify = :center
+        @track_placeholder.halign = :center
+        @track_placeholder.valign = :center
+        @track_placeholder.margin_start = 18
+        @track_placeholder.margin_end = 18
+        @track_placeholder.visible = false
+        # An overlay child swallows clicks meant for the list underneath it.
+        @track_placeholder.can_target = false
+        @track_placeholder
       end
 
       def split(start_child, end_child, position:)
@@ -263,13 +318,13 @@ module Loamp
       end
 
       # A two-line list row: name on top, what it holds underneath.
-      def list_pane(&)
+      def list_pane(kind, &)
         store = Gio::ListStore.new(Row)
         selection = Gtk::SingleSelection.new(store)
         selection.autoselect = false
         selection.can_unselect = false
 
-        view = Gtk::ListView.new(selection, LibraryNameFactory.build)
+        view = Gtk::ListView.new(selection, name_factory(kind))
         view.signal_connect('activate') do |_view, position|
           yield(store.get_item(position))
         end
@@ -285,7 +340,45 @@ module Loamp
           yield(item) if item
         end
 
+        add_row_menu(kind, view, selection)
         { widget: view, store: store, selection: selection }
+      end
+
+      # An artist or album row stands for everything under it, so its menu
+      # queues exactly the tracks that clicking the row would list.
+      def name_factory(kind)
+        LibraryNameFactory.build(row_context(kind))
+      end
+
+      # One proc per pane, handed to every row that pane builds: a right-click
+      # reports the row it landed on, which is what the menu then acts on.
+      def row_context(kind)
+        @contexts[kind] ||= lambda do |list_item, widget, x_position, y_position|
+          show_row_menu(kind, list_item.item, widget, x_position, y_position)
+        end
+      end
+
+      def add_row_menu(kind, widget, selection)
+        menu = LibraryRowMenu.new(widget) { |action, row| act_on_row(kind, action, row) }
+        @menus[kind] = menu
+        RowGesture.attach_menu_key(widget) { open_row_menu(kind, widget, selection) }
+        menu
+      end
+
+      # The keyboard has no row under a pointer to go on, so it acts on the
+      # row the list has selected — which is the one the arrow keys just moved
+      # to, and the one drawn as current. Nothing selected is not a failure
+      # worth a toast; it just leaves the key alone.
+      def open_row_menu(kind, widget, selection)
+        x_position, y_position = RowGesture.focus_point(widget)
+        show_row_menu(kind, selection.selected_item, widget, x_position, y_position)
+      end
+
+      def show_row_menu(kind, row, widget, x_position, y_position)
+        menu = @menus[kind]
+        return false unless menu
+
+        menu.show(row, x_position, y_position, source: widget, heading: row&.primary)
       end
 
       def track_pane
@@ -304,49 +397,22 @@ module Loamp
 
         connect(view, 'activate') { |_view, position| play_track(store.get_item(position)) }
 
-        gesture = Gtk::GestureClick.new
-        gesture.button = 3
-        gesture.signal_connect('pressed') do |_gesture, _n, x, y|
-          item = store.get_item(selection.selected) if selection.n_items.positive?
-          show_track_menu(item, view, x, y) if item
-        end
-        view.add_controller(gesture)
-
+        add_row_menu(:track, view, selection)
         { widget: view, store: store, selection: selection }
       end
 
-      def show_track_menu(row, widget, x, y)
-        popover = Gtk::Popover.new
-        box = Gtk::Box.new(:vertical, 0)
-        play = Gtk::Button.new(label: 'Play')
-        play.add_css_class('flat')
-        play.signal_connect('clicked') do
-          popover.popdown
-          play_track(row)
-        end
-        queue = Gtk::Button.new(label: 'Add to Queue')
-        queue.add_css_class('flat')
-        queue.signal_connect('clicked') do
-          popover.popdown
-          enqueue_track(row)
-        end
-        box.append(play)
-        box.append(queue)
-        popover.child = box
-        popover.set_parent(widget)
-        popover.pointing_to = Gdk::Rectangle.new(x.to_i, y.to_i, 1, 1)
-        popover.popup
-        @track_menu = popover
-      end
-
+      # The label fills its cell rather than shrinking to its text, so the
+      # gesture it carries covers the whole width of the row it is part of.
       def text_column(title, expand: false, fixed_width: nil, align: :start, &value)
         factory = Gtk::SignalListItemFactory.new
 
         factory.signal_connect('setup') do |_factory, list_item|
           label = Gtk::Label.new
-          label.halign = align
+          label.xalign = align == :end ? 1 : 0
+          label.hexpand = true
           label.ellipsize = :end
           label.add_css_class('dim-label') unless title == 'Title'
+          RowGesture.attach(label, list_item, row_context(:track))
           list_item.child = label
         end
 
@@ -388,6 +454,7 @@ module Loamp
         end
 
         fill(@albums, rows)
+        warm_album_art(albums)
       end
 
       def load_tracks
@@ -401,6 +468,7 @@ module Loamp
         end)
 
         update_summary(tracks.size)
+        update_track_placeholder(tracks.size)
       end
 
       def matching_tracks
@@ -431,11 +499,58 @@ module Loamp
         end
       end
 
+      # The cover for an album, but only if one has already been built. Building
+      # it reads a tag and decodes an image, and this is asked for every album
+      # in the collection: the ones still missing are built by #warm_album_art,
+      # off the main loop.
       def album_thumbnail(album)
         return nil unless @art_cache && album.path
 
-        track = @library.track(album.path)
-        @art_cache.thumbnail_for(track)
+        @art_cache.cached_thumbnail(album_track(album))
+      end
+
+      # A stand-in for one of the album's files. The art cache keys covers on
+      # the album rather than the track, so the fields that key is made of are
+      # the only ones that have to be right — and they all come from the album
+      # row already in hand, which saves a query per album.
+      def album_track(album)
+        metadata = Metadata.new(album: album.title, album_artist: album.artist)
+        Track.new(album.path, metadata: metadata)
+      end
+
+      # Builds the missing covers on a worker thread and fills the pane again
+      # as they land. The cache refuses a second warm while one is running, so
+      # a redraw part way through a batch costs nothing.
+      def warm_album_art(albums)
+        return if @art_cache.nil?
+
+        filter = @artist
+        tracks = albums.filter_map { |album| album_track(album) if album.path }
+
+        @art_cache.warm_thumbnails(tracks,
+                                   on_progress: -> { redraw_album_art(filter) },
+                                   on_finished: -> { redraw_album_art(filter, final: true) })
+      end
+
+      # Covers have arrived, so the pane is filled again — by now every one of
+      # them is a file on disk, which makes that a couple of hundred stats.
+      #
+      # Rows are rebuilt rather than given their new art where they stand:
+      # writing to a row the store already holds means writing to a GObject
+      # whose Ruby half GTK may have let go of, which segfaults rather than
+      # misbehaves.
+      #
+      # Throttled, because warming a cold collection reports every batch and
+      # rebuilding two thousand rows is a fifth of a second each time. The last
+      # report is never dropped, so the pane always ends up showing everything.
+      def redraw_album_art(filter, final: false)
+        return if @shutdown || @albums.nil? || @artist != filter || @album != :any
+
+        now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        return if !final && @album_art_drawn && now - @album_art_drawn < ART_REDRAW_INTERVAL
+
+        @album_art_drawn = now
+        load_albums
       end
 
       def album_subtitle(album)
@@ -458,6 +573,20 @@ module Loamp
         @summary.text = text
       end
 
+      def update_track_placeholder(count)
+        return unless @track_placeholder
+
+        query = @search_entry.text.to_s.strip
+        @track_placeholder.text =
+          if query.empty?
+            'No tracks here'
+          else
+            "No tracks match \u201C#{query}\u201D\n" \
+              'Try fewer words, or clear the search.'
+          end
+        @track_placeholder.visible = count.zero?
+      end
+
       def update_empty_state
         empty = @library.empty?
         @empty.visible = empty
@@ -476,6 +605,47 @@ module Loamp
         browse(artist: @artist, album: row.item) if row
       end
 
+      # --- Row actions --------------------------------------------------------
+
+      # A track row acts on itself. An artist or album row stands for
+      # everything the index holds under it, so its menu acts on exactly the
+      # list that clicking the row would show in the pane to its right —
+      # queueing an album no longer means selecting it and then acting on the
+      # tracks it revealed.
+      def act_on_row(kind, action, row)
+        return unless row
+        return act_on_track(action, row) if kind == :track
+
+        tracks = row_tracks(kind, row)
+        return notify("Nothing to queue for #{row.primary}") if tracks.empty?
+
+        case action
+        when :play then play_tracks(tracks)
+        when :play_next then play_next_tracks(tracks, row.primary)
+        when :enqueue then enqueue_tracks(tracks, row.primary)
+        end
+      end
+
+      def act_on_track(action, row)
+        case action
+        when :play then play_track(row)
+        when :play_next then play_next_track(row)
+        when :enqueue then enqueue_track(row)
+        end
+      end
+
+      # `:any` is the "All Artists"/"All Albums" row, and asking the index for
+      # it means "do not filter on this" — the same query the pane itself ran.
+      def row_tracks(kind, row)
+        return [] if @library.nil?
+
+        case kind
+        when :artist then @library.tracks(artist: row.item, limit: TRACK_LIMIT)
+        when :album then @library.tracks(artist: @artist, album: row.item, limit: TRACK_LIMIT)
+        else []
+        end
+      end
+
       # --- Playing ------------------------------------------------------------
 
       # Activating a track queues the whole visible list and starts at the one
@@ -486,7 +656,24 @@ module Loamp
 
         tracks = visible_tracks
         index = tracks.index { |track| track.file_path == row.item.file_path } || 0
+        play_tracks(tracks, index: index)
+      end
 
+      def enqueue_track(row)
+        track = row&.item
+        return unless track.is_a?(Track)
+
+        enqueue_tracks([track], track.title)
+      end
+
+      def play_next_track(row)
+        track = row&.item
+        return unless track.is_a?(Track)
+
+        play_next_tracks([track], track.title)
+      end
+
+      def play_tracks(tracks, index: 0)
         @playlist.clear
         # The tracks came out of the index with their tags already read;
         # #append keeps it that way rather than reopening every file.
@@ -498,13 +685,33 @@ module Loamp
         @player.play
       end
 
-      def enqueue_track(row)
-        track = row&.item
-        return unless track.is_a?(Track)
-
-        @playlist.append(track)
+      def enqueue_tracks(tracks, description)
+        tracks.each { |track| @playlist.append(track) }
         announce_playlist_change
-        notify("Queued #{track.title}")
+        notify("Queued #{queued_label(tracks, description)}")
+      end
+
+      # Queue immediately after whatever is playing. Appending and then
+      # promoting keeps one definition of "next" — Playlist#insert_next is
+      # also what teaches the shuffle order about the choice. Promoting the
+      # last of what was just appended, once per track, leaves a whole album
+      # sitting after the current track in its own order.
+      #
+      # Nothing is promoted into an empty queue: there is no current track for
+      # the group to follow, and the first of them would be it.
+      def play_next_tracks(tracks, description)
+        playing = @playlist.size.positive?
+        tracks.each { |track| @playlist.append(track) }
+        tracks.size.times { @playlist.insert_next(@playlist.size - 1) } if playing
+
+        announce_playlist_change
+        notify("Playing #{queued_label(tracks, description)} next")
+      end
+
+      def queued_label(tracks, description)
+        return description.to_s if tracks.size == 1
+
+        "#{description} · #{track_count_label(tracks.size)}"
       end
 
       def announce_playlist_change

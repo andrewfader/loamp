@@ -80,6 +80,7 @@ module Loamp
         tracks.each { |track| @playlist.append(track) }
         @playlist.set_current_track(0)
         @playlist_view.refresh
+        update_queue_empty_state
         @graph_view&.station_active(true)
         @player.stop
         @player.play
@@ -116,7 +117,10 @@ module Loamp
 
           added << @playlist.append(track)
         end
-        @playlist_view.refresh if added.any?
+        return unless added.any?
+
+        @playlist_view.refresh
+        update_queue_empty_state
       end
 
       def wire_queue_view(view)

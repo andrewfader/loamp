@@ -122,6 +122,7 @@ module Loamp
         create_header_bar
 
         @playlist_view = PlaylistView.new(@playlist, @player)
+        @playlist_view.on_changed { queue_changed }
         @track_info = TrackInfo.new
         @lyrics_view = LyricsView.new
         @player_controls = PlayerControls.new(@player)
@@ -256,6 +257,7 @@ module Loamp
         page.append(heading)
         page.append(child)
         page.append(@queue_empty)
+        page.append(build_queue_footer)
         child.vexpand = true
         update_queue_empty_state
         page
@@ -267,6 +269,60 @@ module Loamp
         empty = @playlist.empty?
         @queue_empty.visible = empty
         @playlist_view.visible = !empty
+        update_queue_summary
+      end
+
+      def build_queue_footer
+        footer = Gtk::Box.new(:horizontal, 8)
+        footer.add_css_class('loamp-queue-footer')
+
+        @queue_summary = Gtk::Label.new
+        @queue_summary.add_css_class('dim-label')
+        @queue_summary.add_css_class('numeric')
+        @queue_summary.xalign = 0
+        @queue_summary.hexpand = true
+
+        @clear_queue_button = Gtk::Button.new(label: 'Clear')
+        @clear_queue_button.add_css_class('flat')
+        @clear_queue_button.tooltip_text = 'Clear the queue'
+        @clear_queue_button.signal_connect('clicked') { clear_playlist }
+
+        footer.append(@queue_summary)
+        footer.append(@clear_queue_button)
+        update_queue_summary
+        footer
+      end
+
+      def update_queue_summary
+        return unless @queue_summary
+
+        count = @playlist.size
+        @queue_summary.text = count.zero? ? 'No tracks' : queue_summary_text(count)
+        @clear_queue_button.sensitive = count.positive? if @clear_queue_button
+      end
+
+      # The running time is left out rather than reported as zero. A queue of
+      # files whose tags have not been read yet has no duration to give, and
+      # "12 tracks · 0 min" reads as a bug rather than as a missing number.
+      def queue_summary_text(count)
+        noun = count == 1 ? 'track' : 'tracks'
+        running = queue_running_time
+        running ? "#{count} #{noun} · #{running}" : "#{count} #{noun}"
+      end
+
+      # Said the way a listener would say it: minutes, then hours and minutes.
+      def queue_running_time
+        seconds = @playlist.tracks.sum { |track| track.duration.to_f }.to_i
+        return nil unless seconds.positive?
+        return 'under a minute' if seconds < 60
+
+        hours, remainder = seconds.divmod(3600)
+        minutes = remainder / 60
+        hours.positive? ? "#{hours} hr #{minutes} min" : "#{minutes} min"
+      end
+
+      def queue_changed
+        update_queue_empty_state
       end
 
       # Now Playing and Library are pages of one stack rather than two
@@ -346,7 +402,7 @@ module Loamp
         LibraryFoldersDialog.present(
           self,
           library: @library,
-          on_changed: method(:library_folder_changed)
+          on_changed: method(:library_folder_changed),
         )
       end
 
@@ -356,6 +412,8 @@ module Loamp
           show_view('library')
           started = @library_view.index_folder(path)
           notify(started ? "Indexing #{File.basename(path)}" : 'A library scan is already running')
+        when :added_batch
+          index_folder_batch(Array(path))
         when :removed
           @library_view.refresh
           notify("Removed #{File.basename(path)} from the library")
@@ -449,6 +507,7 @@ module Loamp
         before = @playlist.size
         @playlist.add_directory(path)
         @playlist_view.refresh
+        update_queue_empty_state
         notify("Added #{@playlist.size - before} tracks")
       end
 
@@ -473,6 +532,15 @@ module Loamp
         show_view('library')
         notify('Rescanning the library')
         @library_view.scan(folders)
+      end
+
+      def index_folder_batch(paths)
+        return if paths.empty?
+
+        show_view('library')
+        started = @library_view.index_folders(paths)
+        folders = "#{paths.size} folder#{'s' unless paths.size == 1}"
+        notify(started ? "Indexing #{folders}" : 'A library scan is already running')
       end
 
       def show_about_dialog

@@ -329,7 +329,7 @@ module Loamp
     def remove_tracks_under(root)
       database.execute(
         'DELETE FROM tracks WHERE path = ? OR path LIKE ? ESCAPE ?',
-        [root, "#{escape_like(root)}#{File::SEPARATOR}%", '\\']
+        [root, "#{escape_like(root)}#{File::SEPARATOR}%", '\\'],
       )
     end
 

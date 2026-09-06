@@ -18,6 +18,9 @@ module Loamp
 
       def handle_key_press(keyval, state)
         ctrl_pressed = state.to_i.anybits?(Gdk::ModifierType::CONTROL_MASK.to_i)
+        return search_library_shortcut if ctrl_pressed && keyval == Gdk::Keyval::KEY_f
+        return open_files_shortcut if ctrl_pressed && keyval == Gdk::Keyval::KEY_o
+
         case keyval
         when Gdk::Keyval::KEY_space then handle_play_pause
         when Gdk::Keyval::KEY_Right then handle_forward(ctrl_pressed)
@@ -27,6 +30,19 @@ module Loamp
         when Gdk::Keyval::KEY_m then toggle_mute
         else false
         end
+      end
+
+      def search_library_shortcut
+        return false unless @library_view
+
+        show_view('library')
+        @library_view.focus_search
+        true
+      end
+
+      def open_files_shortcut
+        open_file_dialog
+        true
       end
 
       def handle_play_pause

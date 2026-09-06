@@ -104,6 +104,11 @@ changed since. Manage those paths under **Library Folders…**: add entire
 trees, or remove a folder (and its tracks) from the library. Overlapping
 folders are deduplicated rather than indexed twice.
 
+Double-clicking a track queues everything listed beside it and starts there;
+right-clicking one offers **Play**, **Play Next** and **Add to Queue**, so
+neither consequence has to be guessed at. A search that matches nothing says
+so in the list rather than leaving an empty pane behind.
+
 ### Keyboard shortcuts
 
 | Key | Action |
@@ -113,6 +118,8 @@ folders are deduplicated rather than indexed twice.
 | <kbd>Ctrl</kbd>+<kbd>←</kbd> / <kbd>Ctrl</kbd>+<kbd>→</kbd> | Previous / next track |
 | <kbd>↑</kbd> / <kbd>↓</kbd> | Volume up / down |
 | <kbd>M</kbd> | Toggle mute |
+| <kbd>Ctrl</kbd>+<kbd>F</kbd> | Open and focus Library search |
+| <kbd>Ctrl</kbd>+<kbd>O</kbd> | Add audio files |
 | <kbd>Delete</kbd> (in queue) | Remove selected track |
 | <kbd>Alt</kbd>+<kbd>↑</kbd> / <kbd>Alt</kbd>+<kbd>↓</kbd> (in queue) | Reorder selected track |
 
@@ -293,6 +300,7 @@ loamp/
 │           ├── track_info.rb         # Now playing pane with album art
 │           ├── library_view.rb       # Library browsing and search
 │           ├── library_name_factory.rb # Library list item rendering
+│           ├── library_row_menu.rb    # Track/album/artist row menu
 │           ├── lyrics_view.rb        # Synced lyrics page
 │           ├── visualizer_view.rb    # Visualization page
 │           ├── radio_view.rb         # Radio search, favorites, history

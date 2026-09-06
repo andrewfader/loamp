@@ -48,6 +48,18 @@ RSpec.describe Loamp::UI::LibraryFoldersDialog do
     expect(changes).to eq([[:removed, File.expand_path(folder)]])
   end
 
+  it 'reports a pattern batch as one change so the caller scans once' do
+    FileUtils.mkdir_p(File.join(folder, 'one'))
+    FileUtils.mkdir_p(File.join(@folder, 'two'))
+    changes = []
+    dialog = described_class.new(parent, library: library,
+                                         on_changed: ->(action, paths) { changes << [action, paths] })
+
+    dialog.send(:added_by_pattern, [File.join(@folder, 'one'), File.join(@folder, 'two')])
+
+    expect(changes).to eq([[:added_batch, [File.join(@folder, 'one'), File.join(@folder, 'two')]]])
+  end
+
   it 'ignores a path that is not a directory' do
     dialog = described_class.new(parent, library: library)
 

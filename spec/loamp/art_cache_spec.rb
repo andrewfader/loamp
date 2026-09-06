@@ -211,6 +211,74 @@ RSpec.describe Loamp::ArtCache do
     end
   end
 
+  describe '#cached_thumbnail' do
+    it 'returns nil until the thumbnail has been built' do
+      expect(cache.cached_thumbnail(Loamp::Track.new(track_in_album_folder))).to be_nil
+    end
+
+    # The library browser asks this for every album it draws, on the main
+    # loop. Reading a tag for each one is what froze the window.
+    it 'answers from disk without reading the file' do
+      track = Loamp::Track.new(track_in_album_folder)
+      cache.thumbnail_for(track)
+      cache.forget
+
+      expect(Loamp::Artwork).not_to receive(:embedded)
+      expect(cache.cached_thumbnail(track)).to start_with('file://')
+    end
+  end
+
+  describe '#warm_thumbnails' do
+    it 'builds the thumbnails a list is about to want, off this thread' do
+      track = Loamp::Track.new(track_in_album_folder)
+
+      expect(cache.warm_thumbnails([track])).to be true
+      cache.wait
+
+      expect(cache.cached_thumbnail(track)).to start_with('file://')
+    end
+
+    it 'says there is nothing to do when every thumbnail already exists' do
+      track = Loamp::Track.new(track_in_album_folder)
+      cache.thumbnail_for(track)
+
+      expect(cache.warm_thumbnails([track])).to be false
+    end
+
+    # Warming ends by asking the browser to fill its pane again, which asks
+    # for another warm. An album with no cover anywhere must not look like
+    # work the second time round, or the two go round forever.
+    it 'does not go looking again for an album with no art anywhere' do
+      track = Loamp::Track.new(AudioFixtures.sample_mp3)
+      cache.warm_thumbnails([track])
+      cache.wait
+
+      expect(cache.warm_thumbnails([track])).to be false
+    end
+
+    # A cover that will not decode — truncated by a crash part way through a
+    # write, or simply not an image — used to look like work forever. Nothing
+    # was written, so the next warm found the same album waiting again, and
+    # the browser's fill-on-finish drove the two round in circles.
+    it 'gives up on a cover it cannot decode' do
+      path = File.join(album_dir, 'track.mp3')
+      FileUtils.cp(AudioFixtures.sample_mp3, path)
+      File.binwrite(File.join(album_dir, 'cover.png'), 'not an image')
+      track = Loamp::Track.new(path)
+
+      cache.warm_thumbnails([track])
+      cache.wait
+
+      expect(cache.warm_thumbnails([track])).to be false
+    end
+
+    it 'builds nothing once it has been shut down' do
+      cache.shutdown
+
+      expect(cache.warm_thumbnails([Loamp::Track.new(track_in_album_folder)])).to be false
+    end
+  end
+
   describe '#forget' do
     it 'drops the memoised answer' do
       track = Loamp::Track.new(AudioFixtures.sample_mp3)
@@ -228,8 +296,8 @@ RSpec.describe Loamp::ArtCache do
 
   def png_bytes
     Base64.decode64(<<~PNG.delete("\n"))
-      iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmM
-      pgAAAABJRU5ErkJggg==
+      iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLv
+      AAAAAElFTkSuQmCC
     PNG
   end
 

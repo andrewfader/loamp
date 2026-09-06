@@ -67,6 +67,13 @@ module Loamp
         position == Gtk::INVALID_LIST_POSITION ? nil : position
       end
 
+      # Queue mutations initiated inside this widget (Delete, context-menu
+      # removal, reordering) need to reach the shell as well. Otherwise its
+      # empty state and summary keep describing the old queue.
+      def on_changed(&block)
+        @changed_callback = block
+      end
+
       private
 
       def create_model
@@ -243,6 +250,7 @@ module Loamp
       def refresh_and_select(index)
         refresh
         @selection.selected = index if index
+        announce_changed
       end
 
       def handle_queue_key(keyval, state)
@@ -265,6 +273,11 @@ module Loamp
 
         @playlist.remove_at(index)
         refresh
+        announce_changed
+      end
+
+      def announce_changed
+        @changed_callback&.call
       end
 
       def setup_player_callbacks

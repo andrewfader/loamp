@@ -167,6 +167,17 @@ RSpec.describe Loamp::UI::PlaylistView do
 
       expect { playlist_view.send(:remove_selected) }.not_to raise_error
     end
+
+    it 'announces queue changes to its container' do
+      add_two_tracks
+      selection.selected = 0
+      changed = false
+      playlist_view.on_changed { changed = true }
+
+      playlist_view.send(:remove_selected)
+
+      expect(changed).to be(true)
+    end
   end
 
   describe 'queue ordering' do

@@ -105,25 +105,12 @@ module Loamp
       # Every audio file under the given folders, deduplicated — two watch
       # folders that overlap must not index the same track twice.
       def audio_files(directories)
-        directories.flat_map { |directory| audio_files_in(directory) }
+        directories.flat_map { |directory| AudioFiles.under(directory) }
           .uniq
           .sort
       end
 
       private
-
-      def audio_files_in(directory)
-        root = File.expand_path(directory.to_s)
-        return [root] if audio?(root) && File.file?(root)
-        return [] unless File.directory?(root)
-
-        Dir.glob(File.join(root, '**', '*'), File::FNM_DOTMATCH)
-          .select { |entry| File.file?(entry) && audio?(entry) }
-      end
-
-      def audio?(entry)
-        Playlist::AUDIO_EXTENSIONS.include?(File.extname(entry).downcase)
-      end
 
       def record(library, file, counts)
         case library.add(file)

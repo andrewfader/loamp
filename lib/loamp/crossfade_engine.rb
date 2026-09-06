@@ -185,9 +185,11 @@ module Loamp
     # to push while it cycles.
     #
     # The bounce runs off the main thread on purpose: taking the element down to
-    # NULL waits for its streaming thread, which is in turn waiting for the GTK
-    # main loop to take the frame it is holding. Doing that from the main loop
-    # deadlocks; from a worker it settles in a few milliseconds.
+    # NULL waits for its streaming thread, and the frame hand-off at the end of
+    # the branch is driven by the GTK main loop. Doing that from the main loop
+    # deadlocks; from a worker, with the leaky queue in #visualizer_branch
+    # keeping the sink's wait off the plugin's thread, it settles in a few
+    # milliseconds.
     def restart_visualizer
       return false unless @visualizer_element && @visualizer_valve
       return false if @visualizer_valve.get_property('drop')
@@ -241,10 +243,20 @@ module Loamp
       sink_available = Gst::ElementFactory.find('gtk4paintablesink')
       return '' unless @visualizer_name && sink_available
 
+      # The leaky queue in front of the sink is what makes the branch safe to
+      # take apart. gtk4paintablesink hands each frame to the GTK main loop and
+      # waits for it, so without a thread boundary the plugin's own streaming
+      # thread is the one parked inside the sink -- and it holds the stream
+      # lock that taking the plugin to NULL needs, so #restart_visualizer
+      # blocks until the track ends rather than for the few milliseconds it
+      # should. The queue puts its own thread in that waiting position
+      # instead, and leaks downstream because a visualizer wants the newest
+      # frame, never a backlog of stale ones.
       <<~PIPELINE
         loamp-crossfade-output. ! queue ! valve name=loamp-crossfade-visualizer-valve drop=true
           ! audioconvert ! #{@visualizer_name} name=loamp-crossfade-visualizer-plugin ! videoconvert
           ! video/x-raw(memory:SystemMemory),format=RGBA
+          ! queue leaky=downstream max-size-buffers=2
           ! gtk4paintablesink name=loamp-crossfade-visualizer sync=false
       PIPELINE
     rescue StandardError

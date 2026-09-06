@@ -372,6 +372,51 @@ RSpec.describe Loamp::UI::MainWindow do
       expect(empty.get_property('visible')).to be(false)
     end
 
+    it 'keeps the queue summary and clear action in sync' do
+      summary = main_window.instance_variable_get(:@queue_summary)
+      clear = main_window.instance_variable_get(:@clear_queue_button)
+      expect(summary.text).to eq('No tracks')
+      expect(clear.sensitive?).to be(false)
+
+      playlist.append(build(:track, duration: 185))
+      main_window.send(:update_queue_empty_state)
+
+      expect(summary.text).to eq('1 track · 3 min')
+      expect(clear.sensitive?).to be(true)
+    end
+
+    # A queue of files whose tags have not been read yet has no running time
+    # to report, and reporting it as "0 min" reads as a broken player.
+    it 'leaves the running time out rather than calling it zero' do
+      summary = main_window.instance_variable_get(:@queue_summary)
+
+      playlist.append(build(:track, duration: 0))
+      main_window.send(:update_queue_empty_state)
+
+      expect(summary.text).to eq('1 track')
+    end
+
+    it 'counts a long queue in hours' do
+      summary = main_window.instance_variable_get(:@queue_summary)
+
+      2.times { playlist.append(build(:track, duration: 2_000)) }
+      main_window.send(:update_queue_empty_state)
+
+      expect(summary.text).to eq('2 tracks · 1 hr 6 min')
+    end
+
+    it 'shows the empty state after the final queue row is removed' do
+      playlist.append(build(:track))
+      main_window.send(:update_queue_empty_state)
+      view = main_window.instance_variable_get(:@playlist_view)
+      view.refresh
+      view.instance_variable_get(:@selection).selected = 0
+
+      view.send(:remove_selected)
+
+      expect(main_window.instance_variable_get(:@queue_empty).get_property('visible')).to be(true)
+    end
+
     it 'can create file dialog without errors' do
       expect do
         dialog = Gtk::FileDialog.new

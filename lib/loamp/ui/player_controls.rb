@@ -77,6 +77,7 @@ module Loamp
 
         @stop_button = Gtk::Button.new
         @stop_button.child = Gtk::Image.new(icon_name: 'media-playback-stop-symbolic')
+        @stop_button.tooltip_text = 'Stop'
 
         @next_button = Gtk::Button.new
         @next_button.child = Gtk::Image.new(icon_name: 'media-skip-forward-symbolic')
@@ -86,6 +87,7 @@ module Loamp
         @shuffle_button = Gtk::ToggleButton.new
         @shuffle_button.child = Gtk::Image.new(icon_name: 'media-playlist-shuffle-symbolic')
         @shuffle_button.tooltip_text = 'Shuffle'
+        @shuffle_button.active = @player.shuffle?
 
         @repeat_button = Gtk::Button.new
         update_repeat_button_icon
@@ -241,7 +243,7 @@ module Loamp
       end
 
       def update_play_pause_button(state)
-        @state_label.text = state == :playing ? 'Playing' : 'Stopped' if @state_label
+        @state_label.text = state.to_s.capitalize if @state_label
         remove_css_class('is-playing')
         add_css_class('is-playing') if state == :playing
 
@@ -300,7 +302,7 @@ module Loamp
       end
 
       def update_progress(position, duration)
-        live = live_stream? || duration.to_f <= 0 && @player.playing?
+        live = live_stream? || (duration.to_f <= 0 && @player.playing?)
         @position_label.text = format_time(position)
         @duration_label.text = live ? 'Live' : format_time(duration)
 

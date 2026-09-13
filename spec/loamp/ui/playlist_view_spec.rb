@@ -79,6 +79,18 @@ RSpec.describe Loamp::UI::PlaylistView do
       expect(store.get_item(0).track).to equal(playlist[0])
     end
 
+    # A row's track lives on the Ruby object wrapping its GObject, and only
+    # the view keeps that wrapper alive. When it did not, the wrappers were
+    # collected out from under a store that still held their GObjects and
+    # every queue row drew as an empty band.
+    it 'keeps its rows readable after a garbage collection' do
+      add_two_tracks
+      3.times { GC.start }
+
+      expect(store.get_item(1).position).to eq(2)
+      expect(store.get_item(1).track).not_to be_nil
+    end
+
     it 'picks up tracks added after construction' do
       playlist_view
       playlist.add_track(first_track)

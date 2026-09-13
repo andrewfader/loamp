@@ -39,13 +39,23 @@ module Loamp
       end
 
       # Rebuilds the model from the playlist.
+      #
+      # The store holds the row's GObject, but the track it displays lives in
+      # an instance variable on the Ruby object wrapping it, and nothing on
+      # the GObject side keeps that wrapper alive. Drop the last Ruby
+      # reference and the wrapper is collected while the GObject sits in the
+      # store; the next bind is handed a freshly built wrapper with no track
+      # and no position, and the row draws as an empty band. @rows is that
+      # reference.
       def refresh
         @store.remove_all
+        @rows = []
 
         @playlist.each_with_index do |track, index|
           row = Row.new
           row.track = track
           row.position = index + 1
+          @rows << row
           @store.append(row)
         end
 
@@ -60,6 +70,7 @@ module Loamp
       def shutdown
         @context_menu&.unparent
         @context_menu = nil
+        @rows = []
       end
 
       def selected_index
@@ -78,6 +89,10 @@ module Loamp
 
       def create_model
         @store = Gio::ListStore.new(Row)
+        @rows = []
+        # See #text_factory: a column takes ownership of its factory, and a
+        # factory whose Ruby object has been collected builds nothing.
+        @factories = []
         @selection = Gtk::SingleSelection.new(@store)
         # Selecting a row should not start playback; that is what activation is
         # for. Autoselect would also fight the current-track highlight.
@@ -129,8 +144,16 @@ module Loamp
 
       # ColumnView builds cells lazily: "setup" creates a reusable widget and
       # "bind" fills it in for whichever row is scrolling into view.
+      #
+      # The factory is remembered because Gtk::ColumnViewColumn takes
+      # ownership of it: GTK keeps the factory itself, but nothing keeps the
+      # Ruby object that carries these two handlers, and once that is
+      # collected the factory stops building cells. Rows still appear — GTK
+      # allocates a cell per column — with nothing inside them, which is what
+      # a queue full of empty bands was.
       def text_factory(css_classes: [], align: :start, ellipsize: false)
         factory = Gtk::SignalListItemFactory.new
+        @factories << factory
 
         factory.signal_connect('setup') do |_factory, list_item|
           label = Gtk::Label.new

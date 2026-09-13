@@ -42,6 +42,12 @@ module Loamp
         @handlers = []
         @menus = {}
         @contexts = {}
+        # A view or a column takes ownership of the factory it is given. GTK
+        # keeps the factory, but nothing keeps the Ruby object carrying its
+        # "setup" and "bind" handlers, and a factory that has lost them
+        # builds no cells at all: the panes draw rows of the right height
+        # with nothing in them, or a track list that looks empty.
+        @factories = []
         @artist = :any
         @album = :any
 
@@ -69,7 +75,10 @@ module Loamp
         @menus.clear
         @handlers.each { |object, id| object.signal_handler_disconnect(id) }
         @handlers.clear
-        [@artists, @albums, @tracks].each { |pane| pane[:store].remove_all }
+        [@artists, @albums, @tracks].each do |pane|
+          pane[:store].remove_all
+          pane[:rows] = []
+        end
       end
 
       # Fires when tracks have been added to the playlist, so the playlist
@@ -341,13 +350,13 @@ module Loamp
         end
 
         add_row_menu(kind, view, selection)
-        { widget: view, store: store, selection: selection }
+        { widget: view, store: store, selection: selection, rows: [] }
       end
 
       # An artist or album row stands for everything under it, so its menu
       # queues exactly the tracks that clicking the row would list.
       def name_factory(kind)
-        LibraryNameFactory.build(row_context(kind))
+        LibraryNameFactory.build(row_context(kind)).tap { |factory| @factories << factory }
       end
 
       # One proc per pane, handed to every row that pane builds: a right-click
@@ -398,13 +407,14 @@ module Loamp
         connect(view, 'activate') { |_view, position| play_track(store.get_item(position)) }
 
         add_row_menu(:track, view, selection)
-        { widget: view, store: store, selection: selection }
+        { widget: view, store: store, selection: selection, rows: [] }
       end
 
       # The label fills its cell rather than shrinking to its text, so the
       # gesture it carries covers the whole width of the row it is part of.
       def text_column(title, expand: false, fixed_width: nil, align: :start, &value)
         factory = Gtk::SignalListItemFactory.new
+        @factories << factory
 
         factory.signal_connect('setup') do |_factory, list_item|
           label = Gtk::Label.new
@@ -481,9 +491,16 @@ module Loamp
       # One splice rather than a remove_all and two thousand appends: each
       # append emits items-changed, and the list view answers every one of
       # them.
+      # The pane keeps the rows as well as the store does. The store holds
+      # each row's GObject; the fields it displays live on the Ruby object
+      # wrapping it, which nothing on the GObject side keeps alive. Once the
+      # last Ruby reference goes the wrapper is collected, the next bind gets
+      # a blank replacement built from the surviving GObject, and the pane
+      # fills with empty rows.
       def fill(pane, rows)
         @loading = true
         store = pane[:store]
+        pane[:rows] = rows
         store.splice(0, store.n_items, rows)
       ensure
         @loading = false

@@ -608,6 +608,21 @@ RSpec.describe Loamp::UI::LibraryView do
     end
   end
 
+  describe 'row lifetime' do
+    # Each pane's fields live on the Ruby object wrapping the row's GObject,
+    # and only the pane keeps that wrapper alive. When it did not, a
+    # collection between filling a pane and drawing it left every row blank.
+    it 'keeps rows readable after a garbage collection' do
+      stock_library
+      view.refresh
+      3.times { GC.start }
+
+      expect(track_row(0).primary).not_to be_nil
+      expect(artist_row('Haim')).not_to be_nil
+      expect(album_row('Days Are Gone')).not_to be_nil
+    end
+  end
+
   def track_row(position)
     view.instance_variable_get(:@tracks)[:store].get_item(position)
   end

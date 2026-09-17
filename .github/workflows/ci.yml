@@ -25,7 +25,7 @@ jobs:
       LIBGL_ALWAYS_SOFTWARE: '1'
       LOAMP_SCREENSHOT_DIR: tmp/e2e-screenshots
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Native libraries must exist before setup-ruby installs the cached bundle.
       - name: Install system dependencies

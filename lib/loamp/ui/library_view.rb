@@ -79,6 +79,7 @@ module Loamp
           pane[:store].remove_all
           pane[:rows] = []
         end
+        @factories.each { |factory| RowGesture.release_for(factory) }
       end
 
       # Fires when tracks have been added to the playlist, so the playlist
@@ -415,6 +416,7 @@ module Loamp
       def text_column(title, expand: false, fixed_width: nil, align: :start, &value)
         factory = Gtk::SignalListItemFactory.new
         @factories << factory
+        gestures = RowGesture.retain_for(factory)
 
         factory.signal_connect('setup') do |_factory, list_item|
           label = Gtk::Label.new
@@ -422,7 +424,7 @@ module Loamp
           label.hexpand = true
           label.ellipsize = :end
           label.add_css_class('dim-label') unless title == 'Title'
-          RowGesture.attach(label, list_item, row_context(:track))
+          gestures[list_item] = RowGesture.attach(label, list_item, row_context(:track))
           list_item.child = label
         end
 

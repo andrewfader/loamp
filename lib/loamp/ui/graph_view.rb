@@ -4,6 +4,7 @@ module Loamp
   module UI
     class GraphView < Gtk::Box
       NODE_RADIUS = 18
+      MAX_NODES = 200
       FEEDBACK_ACTIONS = {
         up: ['emblem-favorite-symbolic', 'More like this'],
         down: ['action-unavailable-symbolic', 'Less like this'],
@@ -15,7 +16,7 @@ module Loamp
         @similarity = similarity
         @layout = Radio::GraphLayout.new
         @callbacks = {}
-        @pending = Hash.new(0)
+        @pending = {}
         @labels = {}
         @scale = 1.0
         @offset_x = 0
@@ -38,9 +39,12 @@ module Loamp
 
       def seed(artist, mbid: nil, local: true)
         name = artist.to_s.strip
-        return if name.empty?
+        return if @shutdown || name.empty?
 
         id = mbid || name
+        @pending.clear
+        @scale = 1.0
+        @dragged_node = @drag_origin = nil
         @layout = Radio::GraphLayout.new
         @labels = { id => name }
         node = @layout.add_node(id, label: name, local: local)
@@ -56,6 +60,8 @@ module Loamp
       def shutdown
         @shutdown = true
         @pending.clear
+        @canvas.remove_tick_callback(@tick_id) if @tick_id
+        @tick_id = nil
         @spinner&.stop
       end
 
@@ -145,7 +151,7 @@ module Loamp
         @canvas.hexpand = true
         @canvas.set_draw_func { |_area, context, width, height| draw(context, width, height) }
         add_gestures
-        @canvas.add_tick_callback do
+        @tick_id = @canvas.add_tick_callback do
           @layout.step
           @canvas.queue_draw
           true
@@ -193,6 +199,8 @@ module Loamp
 
         scroll = Gtk::EventControllerScroll.new(:vertical)
         scroll.signal_connect('scroll') do |_controller, _dx, dy|
+          next false if dy.zero?
+
           @scale = (@scale * (dy.positive? ? 0.9 : 1.1)).clamp(0.4, 2.5)
           true
         end
@@ -200,24 +208,31 @@ module Loamp
       end
 
       def expand(id, artist:, mbid: nil)
-        generation = @pending[id] += 1
+        return if @shutdown
+
+        generation = @pending[id] = Object.new
         Thread.new do
+          next if @shutdown
+
           edges = @similarity.expand(artist: artist, mbid: mbid || mbid_for(id))
           GLib::Idle.add { apply_edges(generation, id, artist, edges) }
+        rescue StandardError => e
+          message = e.message
+          GLib::Idle.add { apply_edges(generation, id, artist, [], error: message) }
         end
       end
 
-      def apply_edges(generation, seed, artist, edges)
+      def apply_edges(generation, seed, artist, edges, error: nil)
         return false if @shutdown || @pending[seed] != generation
 
-        @spinner.stop
-        edges.first(40).each do |target, weight, name|
-          label = name.to_s.empty? ? (@labels[target] || target) : name
-          @labels[target] = label
-          local = @similarity.respond_to?(:local?) && @similarity.local?(target, label)
-          @layout.add_node(target, label: label, local: local)
-          @layout.add_edge(seed, target, weight: weight)
+        @pending.delete(seed)
+        @spinner.stop if @pending.empty?
+        if error
+          set_status("Could not find similar artists for #{artist}: #{error}")
+          return false
         end
+
+        add_edges(seed, edges)
         count = edges.length
         @status.text = if count.positive?
                          "#{count} artists similar to #{artist}. " \
@@ -226,6 +241,18 @@ module Loamp
                          "No similar artists found for #{artist}."
                        end
         false
+      end
+
+      def add_edges(seed, edges)
+        edges.first(40).each do |target, weight, name|
+          next if !@layout.nodes.key?(target) && @layout.nodes.size >= MAX_NODES
+
+          label = name.to_s.empty? ? (@labels[target] || target) : name
+          @labels[target] = label
+          local = @similarity.respond_to?(:local?) && @similarity.local?(target, label)
+          @layout.add_node(target, label: label, local: local)
+          @layout.add_edge(seed, target, weight: weight)
+        end
       end
 
       def draw(context, width, height)
@@ -253,7 +280,7 @@ module Loamp
           context.set_source_rgb(0.55, 0.55, 0.55)
         end
         context.arc(x_position, y_position, NODE_RADIUS, 0, Math::PI * 2)
-        context.fill
+        node.local ? context.fill : context.stroke
         context.set_source_rgb(0.95, 0.95, 0.95)
         context.move_to(x_position + NODE_RADIUS + 3, y_position + 4)
         context.show_text(node.label.to_s)

@@ -14,6 +14,8 @@ module Loamp
       @clock = clock
       @queue = load_queue
       @mutex = Mutex.new
+      @delivery_mutex = Mutex.new
+      @workers = []
       @last_retry = 0
     end
 
@@ -23,37 +25,78 @@ module Loamp
     end
 
     def track_started(track)
+      return if @shutdown
+
       @track = track
       @started_at = @clock.call
       @submitted = false
+      @listened = @last_position = 0.0
+      return unless track
+
+      started_at = @started_at
       @services.each do |service|
-        Thread.new do
-          service.submit(track, listened_at: @started_at, now_playing: true)
-        end
+        remember(Thread.new do
+          service.submit(track, listened_at: started_at, now_playing: true)
+        rescue StandardError
+          nil
+        end)
       end
     end
 
+    def seeked(position)
+      @last_position = position.to_f
+    end
+
     def tick(position, duration)
-      queue_current if eligible?(position, duration)
-      flush if @clock.call - @last_retry >= RETRY_INTERVAL
+      return if @shutdown
+
+      if @track
+        @listened += [position.to_f - @last_position, 0].max
+        @last_position = position.to_f
+      end
+      queue_current if eligible?(duration)
+      return if @clock.call - @last_retry < RETRY_INTERVAL || @flush_thread&.alive?
+      return if @mutex.synchronize { @queue.empty? }
+
+      @last_retry = @clock.call
+      @flush_thread = Thread.new { flush }
+      remember(@flush_thread)
     end
 
     def flush
-      @last_retry = @clock.call
-      entries = @mutex.synchronize { @queue.map(&:dup) }
-      entries.each { |entry| deliver(entry) }
+      @delivery_mutex.synchronize do
+        @last_retry = @clock.call
+        entries = @mutex.synchronize { @queue.map(&:dup) }
+        entries.each { |entry| deliver(entry) }
+      end
+    end
+
+    def wait(timeout: 5)
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
+      @workers.each do |worker|
+        remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        worker.join([remaining, 0].max)
+      end
+      @workers.none?(&:alive?)
     end
 
     def shutdown
+      @shutdown = true
+      wait
       save
     end
 
     private
 
-    def eligible?(position, duration)
+    def remember(worker)
+      @workers.select!(&:alive?)
+      @workers << worker
+    end
+
+    def eligible?(duration)
       return false if @services.empty? || @submitted || !@track || duration.to_f < 30
 
-      position.to_f >= [duration.to_f / 2, MAX_THRESHOLD].min
+      @listened >= [duration.to_f / 2, MAX_THRESHOLD].min
     end
 
     def queue_current
@@ -72,7 +115,9 @@ module Loamp
         false
       end
       @mutex.synchronize do
-        queued = @queue.find { |candidate| candidate['listened_at'] == entry['listened_at'] }
+        queued = @queue.find do |candidate|
+          candidate['listened_at'] == entry['listened_at'] && candidate['track'] == entry['track']
+        end
         next unless queued
 
         remaining.empty? ? @queue.delete(queued) : queued['pending'] = remaining
@@ -99,8 +144,10 @@ module Loamp
     def save
       FileUtils.mkdir_p(File.dirname(@path))
       temporary = "#{@path}.#{Process.pid}.tmp"
-      @mutex.synchronize { File.write(temporary, JSON.generate(@queue)) }
-      File.rename(temporary, @path)
+      @mutex.synchronize do
+        File.write(temporary, JSON.generate(@queue))
+        File.rename(temporary, @path)
+      end
       true
     rescue SystemCallError, IOError
       false

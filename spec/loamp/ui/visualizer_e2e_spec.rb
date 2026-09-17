@@ -19,7 +19,7 @@ RSpec.describe 'Visualizer Wayland integration' do
   it 'renders a real GStreamer visualization into a GTK paintable' do
     skip 'No GStreamer visualization plugin is installed' unless engine.visualizer_name
 
-    playlist.add_track(AudioFixtures.tone(seconds: 3, name: 'visualizer-e2e.wav'))
+    playlist.add_track(AudioFixtures.tone(seconds: 8, name: 'visualizer-e2e-8s.wav'))
     window = Gtk::Window.new
     window.default_width = 760
     window.default_height = 480
@@ -35,7 +35,7 @@ RSpec.describe 'Visualizer Wayland integration' do
       engine.pump
       settle_gtk(iterations: 1)
       picture = view.instance_variable_get(:@picture)
-      break if engine.position > 0.25 && picture.paintable&.current_image
+      break if engine.position > 1.5 && picture.paintable&.current_image
       break if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
     end
 
@@ -44,8 +44,13 @@ RSpec.describe 'Visualizer Wayland integration' do
     expect(picture.paintable).not_to be_nil
     expect(picture.paintable.current_image).not_to be_nil
     expect(button.label).to eq('Stop Visualizer')
-    expect(engine.position).to be > 0.25
+    expect(engine.position).to be > 1.5
     expect(errors).to be_empty
+    settle_gtk(iterations: 2)
+    frame = capture_widget(picture, 'visualizer-frame')
+    pixbuf = GdkPixbuf::Pixbuf.new(file: frame)
+    expect(pixbuf.pixels.uniq.length).to be > 16
+    capture_widget(window, 'visualizer-playing')
   ensure
     window&.destroy
   end

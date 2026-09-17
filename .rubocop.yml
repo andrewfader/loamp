@@ -14,6 +14,7 @@ AllCops:
     - 'test_*.rb'
     - 'vendor/**/*'
     - 'tmp/**/*'
+    - 'pkg/**/*'
   SuggestExtensions: false
 
 # Layout

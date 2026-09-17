@@ -2,6 +2,7 @@
 
 require 'gtk4'
 
+require_relative 'loamp/version'
 require_relative 'loamp/adw'
 
 # Ordered by dependency: metadata underpins artwork and tracks, which the
@@ -88,8 +89,3 @@ require_relative 'loamp/ui/keyboard_shortcuts'
 require_relative 'loamp/ui/playback_observers'
 require_relative 'loamp/ui/main_window'
 require_relative 'loamp/application'
-
-# Main module for the LOAMP music player
-module Loamp
-  VERSION = '1.0.0'
-end

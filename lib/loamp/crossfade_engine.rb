@@ -241,6 +241,7 @@ module Loamp
         Gst::ElementFactory.find(name)
       end
       sink_available = Gst::ElementFactory.find('gtk4paintablesink')
+      @visualizer_name = nil unless sink_available
       return '' unless @visualizer_name && sink_available
 
       # The leaky queue in front of the sink is what makes the branch safe to
@@ -255,8 +256,9 @@ module Loamp
       <<~PIPELINE
         loamp-crossfade-output. ! queue ! valve name=loamp-crossfade-visualizer-valve drop=true
           ! audioconvert ! #{@visualizer_name} name=loamp-crossfade-visualizer-plugin ! videoconvert
-          ! video/x-raw(memory:SystemMemory),format=RGBA
+          ! video/x-raw(memory:SystemMemory),format=RGBx
           ! queue leaky=downstream max-size-buffers=2
+          ! identity drop-allocation=true
           ! gtk4paintablesink name=loamp-crossfade-visualizer sync=false
       PIPELINE
     rescue StandardError

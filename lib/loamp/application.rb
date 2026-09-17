@@ -110,6 +110,7 @@ module Loamp
 
     def start_scrobbling
       @player.on_track_changed { |track| @scrobbler.track_started(track) }
+      @player.on_seeked { |position| @scrobbler.seeked(position) }
     end
 
     private

@@ -388,6 +388,7 @@ RSpec.describe Loamp::UI::LibraryView do
     # on the album under the pointer and not on whatever is selected.
     it 'opens on the row the click landed on' do
       on_screen
+      3.times { GC.start }
       right_click(album_pane_rows[2])
 
       menu = view.instance_variable_get(:@menus)[:album]

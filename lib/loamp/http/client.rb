@@ -43,7 +43,7 @@ module Loamp
       ].freeze
 
       # What a caller gets back. Never nil, so there is one shape to handle.
-      Response = Struct.new(:status, :body, :content_type, keyword_init: true) do
+      Response = Struct.new(:status, :body, :content_type, :content_range, keyword_init: true) do
         def success? = (200..299).cover?(status)
 
         def not_found? = status == 404
@@ -101,7 +101,7 @@ module Loamp
         raw = perform(uri, headers, request_class: ::Net::HTTP::Post, body: body)
         return UNREACHABLE unless raw
 
-        Response.new(status: raw.code.to_i, body: raw.body, content_type: raw['content-type'])
+        response_for(raw)
       rescue URI::InvalidURIError
         UNREACHABLE
       end
@@ -115,7 +115,12 @@ module Loamp
         target = redirect_target(uri, raw)
         return fetch(target, headers, redirects_left - 1) if target && redirects_left.positive?
 
-        Response.new(status: raw.code.to_i, body: raw.body, content_type: raw['content-type'])
+        response_for(raw)
+      end
+
+      def response_for(raw)
+        Response.new(status: raw.code.to_i, body: raw.body, content_type: raw['content-type'],
+                     content_range: raw['content-range'])
       end
 
       # GET is idempotent, so a request that failed before producing any HTTP

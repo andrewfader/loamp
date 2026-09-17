@@ -48,16 +48,15 @@ module Loamp
       # and no position, and the row draws as an empty band. @rows is that
       # reference.
       def refresh
-        @store.remove_all
-        @rows = []
+        return if @shutdown
 
-        @playlist.each_with_index do |track, index|
+        @rows = @playlist.tracks.each_with_index.map do |track, index|
           row = Row.new
           row.track = track
           row.position = index + 1
-          @rows << row
-          @store.append(row)
+          row
         end
+        @store.splice(0, @store.n_items, @rows)
 
         update_current_track_highlight
       end
@@ -68,8 +67,11 @@ module Loamp
       # somewhere else entirely. GtkWidget::destroy does not fire for a child
       # widget, so the owner of the view has to say when it is finished.
       def shutdown
+        @shutdown = true
         @context_menu&.unparent
         @context_menu = nil
+        @store.remove_all
+        @factories.each { |factory| RowGesture.release_for(factory) }
         @rows = []
       end
 
@@ -154,12 +156,15 @@ module Loamp
       def text_factory(css_classes: [], align: :start, ellipsize: false)
         factory = Gtk::SignalListItemFactory.new
         @factories << factory
+        gestures = RowGesture.retain_for(factory)
 
         factory.signal_connect('setup') do |_factory, list_item|
           label = Gtk::Label.new
-          label.halign = align
+          label.hexpand = true
+          label.xalign = align == :end ? 1 : 0
           label.ellipsize = :end if ellipsize
           css_classes.each { |name| label.add_css_class(name) }
+          gestures[list_item] = RowGesture.attach(label, list_item, method(:show_row_menu))
           list_item.child = label
         end
 
@@ -189,13 +194,19 @@ module Loamp
       # replacement.
       def add_context_menu
         @context_menu = build_context_menu
+        RowGesture.attach_menu_key(@column_view) do
+          next false unless selected_index
 
-        gesture = Gtk::GestureClick.new
-        gesture.button = 3
-        gesture.signal_connect('pressed') do |_gesture, _presses, x, y|
-          show_context_menu(x, y)
+          x, y = RowGesture.focus_point(@column_view)
+          show_context_menu(*RowGesture.point_in(@column_view, self, x, y))
         end
-        @column_view.add_controller(gesture)
+      end
+
+      def show_row_menu(list_item, source, x_position, y_position)
+        return false if @shutdown || list_item.position == Gtk::INVALID_LIST_POSITION
+
+        @selection.selected = list_item.position
+        show_context_menu(*RowGesture.point_in(source, self, x_position, y_position))
       end
 
       def build_context_menu
@@ -242,11 +253,12 @@ module Loamp
       # Popping up a popover whose widget is not yet inside a toplevel window
       # crashes GTK rather than failing politely, so check before asking.
       def show_context_menu(x_position, y_position)
-        return unless root
+        return false if @shutdown || !root || !selected_index
 
         rectangle = Gdk::Rectangle.new(x_position.to_i, y_position.to_i, 1, 1)
         @context_menu.pointing_to = rectangle
         @context_menu.popup
+        true
       end
 
       def play_selected
@@ -308,6 +320,8 @@ module Loamp
       end
 
       def update_current_track_highlight
+        return if @shutdown
+
         index = @playlist.current_index
         return if index.nil? || index >= @store.n_items
 

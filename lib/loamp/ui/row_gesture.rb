@@ -29,6 +29,27 @@ module Loamp
           on_context.call(list_item, widget, x_position, y_position)
         end
         widget.add_controller(gesture)
+        gesture
+      end
+
+      # GTK owns each controller's C object, but its Ruby signal handler also
+      # needs a live wrapper. The factory owns these references until a cell
+      # is torn down, so scrolling cannot leak one controller per old row.
+      def retain_for(factory)
+        gestures = {}
+        handler = factory.signal_connect('teardown') { |_source, item| gestures.delete(item) }
+        factory.instance_variable_set(:@loamp_gestures, [gestures, handler])
+        gestures
+      end
+
+      def release_for(factory)
+        state = factory.instance_variable_get(:@loamp_gestures)
+        return unless state
+
+        gestures, handler = state
+        factory.signal_handler_disconnect(handler)
+        gestures.clear
+        factory.instance_variable_set(:@loamp_gestures, nil)
       end
 
       # A click on a row arrives in that row's own coordinates. Anything

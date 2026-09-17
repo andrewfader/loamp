@@ -2,101 +2,83 @@ name: LOAMP CI
 
 on:
   push:
-    branches: [ main, develop ]
   pull_request:
-    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+    timeout-minutes: 20
     strategy:
+      fail-fast: false
       matrix:
         ruby-version: ['3.2', '3.3', '3.4', '4.0']
-    
+    env:
+      GSK_RENDERER: cairo
+      LIBGL_ALWAYS_SOFTWARE: '1'
+      LOAMP_SCREENSHOT_DIR: tmp/e2e-screenshots
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Ruby ${{ matrix.ruby-version }}
-      uses: ruby/setup-ruby@v1
-      with:
-        ruby-version: ${{ matrix.ruby-version }}
-        bundler-cache: true
-    
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          libgtk-4-dev \
-          libadwaita-1-dev \
-          gir1.2-adw-1 \
-          libtag1-dev \
-          libgstreamer1.0-dev \
-          libgstreamer-plugins-base1.0-dev \
-          gstreamer1.0-plugins-good \
-          gstreamer1.0-plugins-bad \
-          gstreamer1.0-plugins-ugly \
-          gstreamer1.0-tools \
-          dbus \
-          libsndfile1-dev \
-          build-essential \
-          pkg-config \
-          xvfb
-    
-    - name: Install Ruby dependencies
-      run: bundle install
-    
-    - name: Run RuboCop
-      run: bundle exec rubocop
-    
-    - name: Run unit tests
-      run: xvfb-run -a dbus-run-session -- bundle exec rspec
-    
-    - name: Run integration tests
-      run: xvfb-run -a dbus-run-session -- bundle exec ruby spec/integration_test.rb
-    
-    - name: Generate coverage report
-      run: xvfb-run -a dbus-run-session -- bundle exec rspec
-      env:
-        COVERAGE: true
-    
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v5
-      if: matrix.ruby-version == '4.0'
-      with:
-        files: ./coverage/coverage.json
-        flags: unittests
-        name: codecov-umbrella
+      - uses: actions/checkout@v4
 
-  quality:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Ruby
-      uses: ruby/setup-ruby@v1
-      with:
-        ruby-version: '4.0'
-        bundler-cache: true
-    
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          libgtk-4-dev \
-          libadwaita-1-dev \
-          gir1.2-adw-1 \
-          libtag1-dev \
-          libgstreamer1.0-dev \
-          libgstreamer-plugins-base1.0-dev \
-          gstreamer1.0-plugins-good \
-          gstreamer1.0-plugins-bad \
-          gstreamer1.0-plugins-ugly \
-          gstreamer1.0-tools \
-          dbus \
-          xvfb
-        bundle install
-    
-    - name: Run full quality suite
-      run: xvfb-run -a dbus-run-session -- bundle exec rake quality
+      # Native libraries must exist before setup-ruby installs the cached bundle.
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-4-dev libadwaita-1-dev gir1.2-adw-1 libtag1-dev \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
+            gstreamer1.0-plugins-ugly gstreamer1.0-tools \
+            build-essential pkg-config dbus xvfb
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby-version }}
+          bundler-cache: true
+
+      - name: RuboCop
+        run: bundle exec rubocop
+
+      - name: Tests and coverage
+        run: xvfb-run -a dbus-run-session -- bundle exec rspec
+        env:
+          COVERAGE: ${{ matrix.ruby-version == '4.0' && 'true' || '' }}
+
+      - name: Integration tests
+        run: xvfb-run -a dbus-run-session -- bundle exec ruby spec/integration_test.rb
+
+      - name: Build archive
+        run: bundle exec rake build
+
+      - name: Upload build
+        if: matrix.ruby-version == '4.0'
+        uses: actions/upload-artifact@v4
+        with:
+          name: loamp-source
+          path: pkg/*.tar.gz
+          if-no-files-found: error
+
+      - name: Upload test reports and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-ruby-${{ matrix.ruby-version }}
+          path: |
+            coverage/
+            tmp/e2e-screenshots/
+          if-no-files-found: ignore
+
+      - name: Upload coverage to Codecov
+        if: matrix.ruby-version == '4.0'
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./coverage/coverage.json
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: unittests

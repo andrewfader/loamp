@@ -1,0 +1,9 @@
+/.bundle/
+/.ruby-lsp/
+/.rspec_status
+/coverage/
+/pkg/
+/tmp/
+/vendor/bundle/
+*.core
+core

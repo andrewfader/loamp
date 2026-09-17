@@ -10,6 +10,7 @@ module Loamp
     def initialize
       @name = CANDIDATES.find { |candidate| factory?(candidate) }
       @sink_available = factory?('gtk4paintablesink')
+      @name = nil unless @sink_available
     rescue StandardError
       @name = nil
       @sink_available = false
@@ -51,9 +52,15 @@ module Loamp
       # plugin's streaming thread is parked inside the sink at the time. It
       # leaks downstream because a visualizer wants the newest frame rather
       # than a queue of stale ones.
+      # SystemMemory caps alone still allow mappable DMA buffers. Block the
+      # sink's allocation query so frames really use CPU memory: importing
+      # its DMA buffer pool can SIGBUS during GTK/Mesa texture readback.
+      # RGBx is deliberately opaque. Some plugins leave the fourth byte at
+      # zero, which makes their otherwise valid pictures invisible as RGBA.
       @video_sink ||= Gst.parse_bin_from_description(
-        'videoconvert ! video/x-raw(memory:SystemMemory),format=RGBA ! ' \
+        'videoconvert ! video/x-raw(memory:SystemMemory),format=RGBx ! ' \
         'queue leaky=downstream max-size-buffers=2 ! ' \
+        'identity drop-allocation=true ! ' \
         'gtk4paintablesink name=loamp-visualizer-sink',
         true,
       )

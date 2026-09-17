@@ -1,8 +1,13 @@
 # frozen_string_literal: true
 
+# Use software rendering for reproducible GTK captures. Native GPU readback
+# can crash inside Mesa even when GTK's scene renderer itself is Cairo.
+ENV['GSK_RENDERER'] ||= 'cairo'
+ENV['LIBGL_ALWAYS_SOFTWARE'] ||= '1'
+
 # Coverage is opt-in. Always-on reporting was colliding with GTK teardown on
 # Ruby 4 (process exit 139 after a green suite). CI sets COVERAGE=true.
-if ENV['COVERAGE']
+if ENV['COVERAGE'] == 'true'
   require 'simplecov'
   require 'simplecov_json_formatter'
 

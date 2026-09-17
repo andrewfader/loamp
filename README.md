@@ -1,5 +1,8 @@
 # LOAMP - Linux Open Audio Music Player
 
+[![CI](https://github.com/andrewfader/loamp/actions/workflows/ci.yml/badge.svg)](https://github.com/andrewfader/loamp/actions/workflows/ci.yml)
+[![Coverage](https://codecov.io/gh/andrewfader/loamp/graph/badge.svg)](https://codecov.io/gh/andrewfader/loamp)
+
 A music player built with Ruby, GTK4 and libadwaita for Linux.
 
 ## Features
@@ -121,9 +124,11 @@ so in the list rather than leaving an empty pane behind.
 | <kbd>Ctrl</kbd>+<kbd>F</kbd> | Open and focus Library search |
 | <kbd>Ctrl</kbd>+<kbd>O</kbd> | Add audio files |
 | <kbd>Delete</kbd> (in queue) | Remove selected track |
+| <kbd>Menu</kbd> / <kbd>Shift</kbd>+<kbd>F10</kbd> (in queue or library) | Open selected row's actions |
 | <kbd>Alt</kbd>+<kbd>↑</kbd> / <kbd>Alt</kbd>+<kbd>↓</kbd> (in queue) | Reorder selected track |
 
-Right-click a queue entry to play it next, move it, or remove it.
+Right-click a queue entry to play it next, move it, or remove it. Actions apply
+to the clicked entry, even when a different entry was selected.
 
 Media keys work too, through MPRIS — see below.
 
@@ -362,11 +367,12 @@ Feature specs under `spec/features/` use `scenario`/`feature` aliases and
 queue polish, radio Recent, Discover).
 
 Specs that reach the network talk to a local stub server, so the suite runs
-offline. UI specs need a display and skip themselves without one; the MPRIS
-specs do the same for the session bus. `xvfb-run -a dbus-run-session --
+offline. GTK must be able to connect to a Wayland or X11 display when the
+suite loads; MPRIS specs also need a session bus. `xvfb-run -a dbus-run-session --
 bundle exec rspec` runs everything on a headless machine. End-to-end UI specs
 save window captures under a temporary directory; `LOAMP_SCREENSHOT_DIR`
-puts them somewhere you can keep.
+puts them somewhere you can keep. Tests default to Cairo and software OpenGL
+for reproducible captures; the application keeps the desktop's rendering defaults.
 
 ### Test Coverage
 
@@ -389,11 +395,23 @@ suite is not poisoned by GTK teardown. CI sets that flag when uploading
 
 ### Continuous Integration
 
-GitHub Actions runs RuboCop, the unit suite, the integration suite and a
-coverage report on every push to `main` or `develop` and on every pull
-request, against Ruby 3.2, 3.3, 3.4 and 4.0 on Ubuntu latest. Everything runs
-under `xvfb-run` and `dbus-run-session`, so the display- and bus-dependent
-specs execute rather than skip.
+GitHub Actions runs RuboCop, tests, integration checks and the source build
+on every push and pull request, against Ruby 3.2, 3.3, 3.4 and 4.0. Native
+libraries are installed before Bundler compiles the Ruby bindings. GTK tests
+run under Xvfb and a private D-Bus session; optional GStreamer plugin tests
+skip only when their plugin is absent.
+
+Ruby 4.0 enforces the 80% coverage minimum and uploads the report to Codecov.
+Set the repository's `CODECOV_TOKEN` secret if Codecov requires authentication.
+CI saves test screenshots and coverage reports as workflow artifacts, along
+with `loamp-source`, the application archive. Dependabot checks gems and
+Actions monthly.
+
+Build locally with `bundle exec rake build`. It checks all Ruby syntax and
+creates `pkg/loamp-1.0.0.tar.gz`, containing the application, assets, locked
+dependencies and installation instructions. Building does not need a display;
+running the extracted application still requires the system libraries and
+`bundle install` described above.
 
 ### Test Commands Reference
 
@@ -403,6 +421,7 @@ specs execute rather than skip.
 | `make coverage` | Run tests with coverage report |
 | `make quality` | Run quality checks (rubocop + tests) |
 | `make ci` | Run full CI suite |
+| `bundle exec rake build` | Check syntax and build the source archive |
 | `bundle exec rspec` | Unit tests only |
 | `ruby spec/integration_test.rb` | Integration tests only |
 | `bundle exec rubocop` | Code style check |

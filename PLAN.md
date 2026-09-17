@@ -49,8 +49,9 @@ Done:
   freeform atoms, and the library index stores them. Item 6 needs exactly
   these to key its similarity graph.
 
-Suite: 945 examples, 0 failures, 80%+ enforced line coverage, rubocop clean,
-plus a real Wayland/GStreamer visualizer render test.
+The suite enforces 80% line coverage and includes real Wayland/GStreamer
+playback, rendered visualizer pixels, garbage-collection regressions and
+window screenshots. See the transcript follow-up record below.
 
 ---
 
@@ -95,9 +96,8 @@ decoders feeding an audiomixer and safely falls back to the standard engine if
 the required interaudio elements are unavailable. The Visualizer page prefers
 projectM and falls back to Goom, rendering through `gtk4paintablesink`.
 
-Gapless is done. The rest needs a filter chain in place of playbin's default
-audio sink, set via the `audio-sink` property (the engine already supports an
-injected sink — that is how specs pass `fakesink`):
+The processing chain replaces playbin's default audio sink via `audio-sink`.
+Specs inject `fakesink` to exercise real decoding without audible output:
 
 ```
 audioconvert ! rgvolume ! rglimiter ! equalizer-10bands ! audioconvert ! autoaudiosink
@@ -108,9 +108,8 @@ audioconvert ! rgvolume ! rglimiter ! equalizer-10bands ! audioconvert ! autoaud
   Offer album vs track mode.
 - **EQ**: `equalizer-10bands` exposes `band0`..`band9`. Ship the classic
   Winamp presets and persist the user's choice.
-- **Crossfade** is the hard one: playbin3 cannot overlap its own streams. It
-  needs two pipelines feeding an `audiomixer`, with volume ramps driven by
-  `GstController`. Treat as a separate, larger piece of work.
+- **Crossfade** uses separate decoders feeding an `audiomixer`, with gain
+  ramps managed by `CrossfadeEngine`.
 
 ---
 
@@ -130,7 +129,7 @@ definitive misses are cached, and the Lyrics page follows playback position.
   250ms via `Application::TICK_INTERVAL_MS`, which is fine for line-level
   highlighting.
 - Cache fetched lyrics next to the cache used in item 1.
-- `Metadata::Reader` does not read `USLT`/`SYLT` yet — add it there rather than
+- `Metadata::Reader` reads embedded lyrics rather than putting tag parsing
   in the lyrics layer.
 
 ---
@@ -155,7 +154,7 @@ the timeouts and the rate limiter these APIs want.
   flow through `AudioEngine` and `Player`, updating the now-playing title
   without pretending the stream itself changed. `UI::RadioView` searches on a
   worker thread, presents results as a Radio page, and queues a station on
-  activation. What remains is favorites/history and directory-server failover.
+  activation. Favorites/history and directory-server failover are implemented.
 - Live streams have no duration; the seek bar must handle that (currently
   `duration` returns 0, which the progress row already tolerates).
 
@@ -437,8 +436,45 @@ Landed:
   act on. `#redraw_album_art` already stood down once an album was picked, for
   the same reason.
 
-Worth doing next:
+## Transcript follow-up — September 2026
 
-- The queue's own context menu (`PlaylistView#show_context_menu`) is still
-  right-click only. `UI::RowGesture.attach_menu_key` is what the library panes
-  use and would fit there too.
+Reviewed the ten earlier Codex sessions, seven Claude transcripts and four
+AGY conversations associated with this checkout. The prior graph spring-force
+fix, library row/factory retention, folder-pattern preview and preset cycling
+are present. Completed the remaining queue keyboard work and CI/build requests,
+and verified the following additional fixes against the code:
+
+- Menu and Shift+F10 open queue actions. Right-click selects the row under
+  the pointer; queue refresh replaces rows in one splice. Queue and library
+  factories retain row gestures until teardown, then disconnect their teardown
+  handlers on shutdown so GC cannot erase handlers or invoke Ruby during GC.
+- Graph searches discard results from earlier seeds, report worker errors,
+  stop animation on shutdown, ignore zero-distance scrolling and cap growth
+  at 200 nodes. Non-library artists draw hollow, matching the legend.
+- Visualizer frames use opaque RGBx; interpreting plugins' unused fourth
+  byte as alpha made valid frames invisible. Both engines also block the
+  sink's allocation queries: SystemMemory caps alone allowed mappable DMA
+  buffers and GTK/Mesa readback could SIGBUS. The E2E test now checks actual
+  pixel variation and captures the visible frame as well as the window.
+- Podcast resume validates Content-Range and body length before appending;
+  a 416 counts as complete only when the server confirms the exact local size.
+- Scrobble retries run off the GTK timer thread, seek jumps do not count as
+  listened time, now-playing worker failures are contained, and queue writes
+  remain atomic while submissions finish in the background.
+- CI installs native libraries before Bundler, runs the Ruby matrix, enforces
+  coverage, builds a source archive and saves screenshots/reports. Added CI
+  and coverage badges, Dependabot, EditorConfig and generated-file ignores.
+  The GTK exit workaround now preserves suite-hook and coverage failures.
+
+`bundle exec rake build` produces `pkg/loamp-1.0.0.tar.gz`. GitHub-hosted
+execution and the live Codecov badge can only be verified after these local
+changes are pushed; no publishing or repository settings were changed.
+
+Verification on Ruby 4.0.6 and the real Wayland session: **961 examples,
+0 failures, 93.1% line coverage**, **7/7 integration checks**, and RuboCop
+clean across 85 files. The hardware-rendered visualizer and crossfade subset
+also passed. Deliberately insufficient coverage exited 2; an intentional
+suite-hook failure exited 1. The build archive's contents and executable bit
+were checked. One earlier full-suite attempt stalled in native playback;
+the bounded rerun completed in 38.48 seconds. That intermittent native hang
+was not reproduced or claimed fixed.

@@ -5,6 +5,13 @@ require 'spec_helper'
 RSpec.describe Loamp::Visualizer do
   subject(:visualizer) { described_class.new }
 
+  it 'reports no usable backend when the GTK paintable sink is missing' do
+    allow(Gst::ElementFactory).to receive(:find).and_call_original
+    allow(Gst::ElementFactory).to receive(:find).with('gtk4paintablesink').and_return(nil)
+    expect(visualizer).not_to be_available
+    expect(visualizer.name).to be_nil
+  end
+
   # Stands in for playbin: remembers every flag written to it.
   def fake_playbin(flags)
     Class.new do

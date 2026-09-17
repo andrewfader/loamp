@@ -22,7 +22,7 @@ RSpec.describe Loamp::Podcast::Downloader do
     Dir.mktmpdir do |directory|
       destination = File.join(directory, 'episode.mp3')
       File.binwrite(destination, 'abc')
-      server.on('/ep.mp3', status: 206, body: 'def')
+      server.on('/ep.mp3', status: 206, body: 'def', headers: { 'Content-Range' => 'bytes 3-5/6' })
 
       downloader.download(server.url_for('/ep.mp3'), destination)
 
@@ -35,7 +35,7 @@ RSpec.describe Loamp::Podcast::Downloader do
     Dir.mktmpdir do |directory|
       destination = File.join(directory, 'episode.mp3')
       File.binwrite(destination, 'complete')
-      server.on('/ep.mp3', status: 416, body: '')
+      server.on('/ep.mp3', status: 416, body: '', headers: { 'Content-Range' => 'bytes */8' })
 
       expect(downloader.download(server.url_for('/ep.mp3'), destination)).to eq(destination)
       expect(File.binread(destination)).to eq('complete')
@@ -47,6 +47,40 @@ RSpec.describe Loamp::Podcast::Downloader do
       server.on('/ep.mp3', status: 404, body: 'missing')
 
       expect(downloader.download(server.url_for('/ep.mp3'), File.join(directory, 'x.mp3'))).to be(false)
+    end
+  end
+
+  it 'does not mistake a rejected range for a completed episode' do
+    Dir.mktmpdir do |directory|
+      destination = File.join(directory, 'episode.mp3')
+      File.binwrite(destination, 'partial')
+      [nil, 'bytes */3', 'bytes */100'].each do |range|
+        server.on('/ep.mp3', status: 416, body: '', headers: range ? { 'Content-Range' => range } : {})
+        expect(downloader.download(server.url_for('/ep.mp3'), destination)).to be(false)
+        expect(File.binread(destination)).to eq('partial')
+      end
+    end
+  end
+
+  it 'rejects mismatched partial responses without corrupting the existing file' do
+    Dir.mktmpdir do |directory|
+      destination = File.join(directory, 'episode.mp3')
+      File.binwrite(destination, 'abc')
+      [nil, 'bytes 0-2/3', 'bytes 3-8/9', 'bytes 3-5/10'].each do |range|
+        server.on('/ep.mp3', status: 206, body: 'def', headers: range ? { 'Content-Range' => range } : {})
+        expect(downloader.download(server.url_for('/ep.mp3'), destination)).to be(false)
+        expect(File.binread(destination)).to eq('abc')
+      end
+    end
+  end
+
+  it 'replaces the partial file when the server ignores Range' do
+    Dir.mktmpdir do |directory|
+      destination = File.join(directory, 'episode.mp3')
+      File.binwrite(destination, 'old')
+      server.on('/ep.mp3', body: 'new complete episode')
+      expect(downloader.download(server.url_for('/ep.mp3'), destination)).to eq(destination)
+      expect(File.binread(destination)).to eq('new complete episode')
     end
   end
 end

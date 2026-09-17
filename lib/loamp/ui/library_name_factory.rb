@@ -9,7 +9,10 @@ module Loamp
       # builds reports its right-clicks to. See UI::RowGesture.
       def build(on_context = nil)
         Gtk::SignalListItemFactory.new.tap do |factory|
-          factory.signal_connect('setup') { |_source, item| setup(item, on_context) }
+          gestures = RowGesture.retain_for(factory)
+          factory.signal_connect('setup') do |_source, item|
+            gestures[item] = setup(item, on_context)
+          end
           factory.signal_connect('bind') { |_source, item| bind(item) }
         end
       end
@@ -31,8 +34,8 @@ module Loamp
         labels.append(label(secondary: true))
         row_box.append(image)
         row_box.append(labels)
-        RowGesture.attach(row_box, list_item, on_context)
         list_item.child = row_box
+        RowGesture.attach(row_box, list_item, on_context)
       end
 
       def bind(list_item)

@@ -235,6 +235,66 @@ RSpec.describe Loamp::UI::PlaylistView do
   end
 
   describe 'context menu' do
+    def press_menu(key, modifiers = 0)
+      playlist_view.child.observe_controllers.to_a.grep(Gtk::EventControllerKey).any? do |controller|
+        controller.signal_emit('key-pressed', key, 0, modifiers)
+      end
+    end
+
+    def show_queue
+      add_two_tracks
+      @window = Gtk::Window.new
+      @window.child = playlist_view
+      @window.present
+      settle_gtk
+    end
+
+    after { @window&.destroy }
+
+    it 'opens the selected row menu with Menu and Shift+F10' do
+      show_queue
+      selection.selected = 1
+      expect(press_menu(Gdk::Keyval::KEY_Menu)).to be(true)
+      menu = playlist_view.instance_variable_get(:@context_menu)
+      expect(menu).to be_visible
+      menu.popdown
+      expect(press_menu(Gdk::Keyval::KEY_F10, Gdk::ModifierType::SHIFT_MASK)).to be(true)
+      expect(menu).to be_visible
+      expect(selection.selected).to eq(1)
+    end
+
+    it 'leaves menu keys unclaimed without a selection or after shutdown' do
+      show_queue
+      selection.unselect_all
+      expect(press_menu(Gdk::Keyval::KEY_Menu)).to be(false)
+      selection.selected = 0
+      playlist_view.shutdown
+      expect(press_menu(Gdk::Keyval::KEY_Menu)).to be(false)
+    end
+
+    it 'acts on the clicked row even when another row was selected, after GC' do
+      show_queue
+      selection.selected = 0
+      3.times { GC.start }
+      labels = []
+      walk = lambda do |widget|
+        labels << widget if widget.is_a?(Gtk::Label)
+        child = widget.first_child
+        while child
+          walk.call(child)
+          child = child.next_sibling
+        end
+      end
+      walk.call(playlist_view.child)
+      label = labels.find { |item| item.text == playlist[1].to_s }
+      expect(label).not_to be_nil
+      gesture = label.observe_controllers.to_a.grep(Gtk::GestureClick).find { |item| item.button == 3 }
+      gesture.signal_emit('pressed', 1, 4.0, 4.0)
+      expect(selection.selected).to eq(1)
+      playlist_view.activate_action('playlist.remove', nil)
+      expect(playlist.tracks.map(&:file_path)).to eq([first_track])
+    end
+
     it 'builds a GTK4 popover rather than a removed Gtk::Menu' do
       expect(playlist_view.instance_variable_get(:@context_menu)).to be_a(Gtk::PopoverMenu)
     end

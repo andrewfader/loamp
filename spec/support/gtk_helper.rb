@@ -38,16 +38,22 @@ RSpec.configure do |config|
     # ruby-gnome finalizers can SIGSEGV after a green suite (exit 139).
     # exit! skips those C finalizers once Ruby teardown is done.
     at_exit do
+      status = $!.is_a?(SystemExit) ? $!.status : ($! ? 1 : 0)
       if defined?(SimpleCov) && SimpleCov.external_at_exit?
         begin
           SimpleCov.at_exit_behavior
+        rescue SystemExit => e
+          status = e.status unless e.success?
         rescue StandardError => e
           warn "SimpleCov report failed: #{e.message}"
+          status = 1
         end
       end
 
-      failed = defined?(RSpec) && RSpec.world.reporter.failed_examples.any?
-      exit!(failed ? 1 : 0)
+      failed = RSpec.world.reporter.failed_examples.any? || RSpec.world.non_example_failure
+      $stdout.flush
+      $stderr.flush
+      exit!(failed ? 1 : status)
     end
   end
 end

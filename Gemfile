@@ -4,7 +4,7 @@ source 'https://rubygems.org'
 
 ruby '>= 3.2'
 
-gem 'gtk4', '~> 4.2'
+gem 'gtk4', '~> 4.3'
 
 # Audio playback pipeline
 gem 'gstreamer', '~> 4.3'

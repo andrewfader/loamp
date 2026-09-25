@@ -22,7 +22,7 @@ jobs:
       LOAMP_SCREENSHOT_DIR: tmp/e2e-screenshots
       TAGLIB_DIR: /usr/local
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Native libraries must exist before setup-ruby installs the cached bundle.
       - name: Install system dependencies

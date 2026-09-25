@@ -65,7 +65,10 @@ jobs:
         shell: bash
         run: |
           mkdir -p tmp
-          xvfb-run -a dbus-run-session -- bundle exec rspec 2>&1 | tee tmp/rspec.log
+          test_status=0
+          xvfb-run -a dbus-run-session -- bundle exec rspec > tmp/rspec.log 2>&1 || test_status=$?
+          cat tmp/rspec.log
+          exit "$test_status"
         env:
           COVERAGE: 'true'
 

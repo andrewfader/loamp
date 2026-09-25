@@ -34,7 +34,7 @@ A music player built with Ruby, GTK4 and libadwaita for Linux.
 
 ## Requirements
 
-- Ruby 3.2+
+- Ruby 4.0+
 - GTK4 and libadwaita development libraries
 - GStreamer 1.0 with the good/bad/ugly plugin sets
 - TagLib
@@ -48,9 +48,13 @@ good/bad packages provide the fallback on most distributions.
 ## Installation
 
 ### Install system dependencies (Ubuntu/Debian)
+
+Install Ruby 4.0+ and its development headers first. Ubuntu 24.04's default
+Ruby package is too old; use a Ruby 4.0+ installation on that release.
+
 ```bash
 sudo apt-get update
-sudo apt-get install ruby ruby-dev libgtk-4-dev libadwaita-1-dev libtag1-dev \
+sudo apt-get install libgtk-4-dev libadwaita-1-dev libtag1-dev \
   libgstreamer1.0-dev gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
   gstreamer1.0-plugins-ugly build-essential pkg-config
 ```
@@ -396,7 +400,7 @@ suite is not poisoned by GTK teardown. CI sets that flag when uploading
 ### Continuous Integration
 
 GitHub Actions runs RuboCop, tests, integration checks and the source build
-on every push and pull request, against Ruby 3.2, 3.3, 3.4 and 4.0. Native
+on every push and pull request, against Ruby 4.0. Native
 libraries are installed before Bundler compiles the Ruby bindings. GTK tests
 run under Xvfb and a private D-Bus session; optional GStreamer plugin tests
 skip only when their plugin is absent.

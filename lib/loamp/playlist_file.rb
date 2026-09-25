@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require 'pathname'
-
 module Loamp
   # Imports and exports standard extended M3U playlists. Keeping this separate
   # from Playlist means file-format failures cannot disturb the live queue.

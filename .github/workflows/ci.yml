@@ -16,10 +16,6 @@ jobs:
   test:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        ruby-version: ['3.2', '3.3', '3.4', '4.0']
     env:
       GSK_RENDERER: cairo
       LIBGL_ALWAYS_SOFTWARE: '1'
@@ -58,7 +54,7 @@ jobs:
 
       - uses: ruby/setup-ruby@v1
         with:
-          ruby-version: ${{ matrix.ruby-version }}
+          ruby-version: '4.0'
           bundler-cache: true
           cache-version: taglib-2.0.2
 
@@ -66,9 +62,23 @@ jobs:
         run: bundle exec rubocop
 
       - name: Tests and coverage
-        run: xvfb-run -a dbus-run-session -- bundle exec rspec
+        shell: bash
+        run: |
+          mkdir -p tmp
+          xvfb-run -a dbus-run-session -- bundle exec rspec 2>&1 | tee tmp/rspec.log
         env:
-          COVERAGE: ${{ matrix.ruby-version == '4.0' && 'true' || '' }}
+          COVERAGE: 'true'
+
+      - name: Report test failure
+        if: failure()
+        run: |
+          ruby <<'RUBY'
+          if File.file?('tmp/rspec.log')
+            message = File.readlines('tmp/rspec.log').last(100).join
+            message = message.gsub('%', '%25').gsub("\r", '%0D').gsub("\n", '%0A')
+            puts "::error title=RSpec failure::#{message}"
+          end
+          RUBY
 
       - name: Integration tests
         run: xvfb-run -a dbus-run-session -- bundle exec ruby spec/integration_test.rb
@@ -77,7 +87,6 @@ jobs:
         run: bundle exec rake build
 
       - name: Upload build
-        if: matrix.ruby-version == '4.0'
         uses: actions/upload-artifact@v4
         with:
           name: loamp-source
@@ -88,14 +97,14 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-reports-ruby-${{ matrix.ruby-version }}
+          name: test-reports-ruby-4.0
           path: |
             coverage/
             tmp/e2e-screenshots/
+            tmp/rspec.log
           if-no-files-found: ignore
 
       - name: Upload coverage to Codecov
-        if: matrix.ruby-version == '4.0'
         uses: codecov/codecov-action@v5
         with:
           files: ./coverage/coverage.json

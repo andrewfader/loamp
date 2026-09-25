@@ -8,11 +8,11 @@ puts '====================='
 
 def check_ruby_version
   print 'Ruby version: '
-  if RUBY_VERSION >= '3.0.0'
+  if Gem::Version.new(RUBY_VERSION) >= Gem::Version.new('4.0')
     puts "✓ #{RUBY_VERSION}"
     true
   else
-    puts "✗ #{RUBY_VERSION} (requires 3.0.0+)"
+    puts "✗ #{RUBY_VERSION} (requires 4.0+)"
     false
   end
 end

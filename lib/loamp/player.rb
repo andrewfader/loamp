@@ -198,9 +198,9 @@ module Loamp
 
     # One listener raising must not stop the others from being told, or a
     # single broken observer takes the whole UI out of sync.
-    def publish(event, *arguments)
+    def publish(event, *)
       @callbacks[event].each do |callback|
-        callback.call(*arguments)
+        callback.call(*)
       rescue StandardError => e
         warn "Loamp::Player #{event} listener failed: #{e.message}"
       end

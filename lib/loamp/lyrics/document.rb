@@ -7,7 +7,7 @@ module Loamp
       def empty? = plain.to_s.strip.empty? && !synced?
 
       def line_at(position)
-        Array(lines).reverse_each.find { |time, _text| time <= position.to_f }
+        Array(lines).rfind { |time, _text| time <= position.to_f }
       end
     end
   end

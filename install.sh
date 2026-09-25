@@ -2,6 +2,13 @@
 
 # LOAMP Installation Script for Ubuntu/Debian
 
+set -e
+
+if ! ruby -rrubygems -e 'exit(Gem::Version.new(RUBY_VERSION) >= Gem::Version.new("4.0") ? 0 : 1)' 2>/dev/null; then
+    echo "Ruby 4.0+ is required. Install Ruby and its development headers before running install.sh." >&2
+    exit 1
+fi
+
 echo "Installing LOAMP - Linux Open Audio Music Player"
 echo "================================================"
 
@@ -12,8 +19,6 @@ sudo apt-get update
 # Install system dependencies
 echo "Installing system dependencies..."
 sudo apt-get install -y \
-    ruby \
-    ruby-dev \
     libgtk-4-dev \
     libadwaita-1-dev \
     gir1.2-adw-1 \

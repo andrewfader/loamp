@@ -106,8 +106,10 @@ module Loamp
       end
 
       def inside?(child, ancestor)
-        child = child.parent while child && child != ancestor
-        !child.nil?
+        return false unless child && ancestor
+
+        # Popover's introspected `parent` field can shadow Widget#parent.
+        child == ancestor || child.ancestor?(ancestor)
       end
     end
   end

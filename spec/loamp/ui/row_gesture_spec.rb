@@ -67,6 +67,22 @@ RSpec.describe Loamp::UI::RowGesture do
     end
   end
 
+  describe '.inside?' do
+    it 'follows popover ancestry without reading introspection struct fields' do
+      list = Gtk::Box.new(:vertical, 0)
+      popover = Gtk::Popover.new
+      button = Gtk::Button.new
+      popover.child = button
+      popover.set_parent(list)
+      allow(popover).to receive(:parent).and_raise(NotImplementedError, "guchar isn't supported")
+
+      expect(described_class.inside?(button, list)).to be(true)
+      expect(described_class.inside?(button, Gtk::Box.new(:vertical, 0))).to be(false)
+    ensure
+      popover&.unparent
+    end
+  end
+
   describe '.focus_point' do
     let(:list) { Gtk::Box.new(:vertical, 0) }
     let(:row) { Gtk::Entry.new }

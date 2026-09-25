@@ -175,9 +175,9 @@ RSpec.describe Loamp::UI::PlaylistView do
 
     it 'does nothing when nothing is selected' do
       add_two_tracks
-      selection.unselect_all
+      selection.selected = Gtk::INVALID_LIST_POSITION
 
-      expect { playlist_view.send(:remove_selected) }.not_to raise_error
+      expect { playlist_view.send(:remove_selected) }.not_to change(playlist, :size)
     end
 
     it 'announces queue changes to its container' do
@@ -228,7 +228,8 @@ RSpec.describe Loamp::UI::PlaylistView do
 
     it 'reports nothing when there is no selection' do
       add_two_tracks
-      selection.unselect_all
+      # SingleSelection does not implement unselect_all on every GTK version.
+      selection.selected = Gtk::INVALID_LIST_POSITION
 
       expect(playlist_view.selected_index).to be_nil
     end
@@ -265,7 +266,7 @@ RSpec.describe Loamp::UI::PlaylistView do
 
     it 'leaves menu keys unclaimed without a selection or after shutdown' do
       show_queue
-      selection.unselect_all
+      selection.selected = Gtk::INVALID_LIST_POSITION
       expect(press_menu(Gdk::Keyval::KEY_Menu)).to be(false)
       selection.selected = 0
       playlist_view.shutdown

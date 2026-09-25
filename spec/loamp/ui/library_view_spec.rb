@@ -487,7 +487,7 @@ RSpec.describe Loamp::UI::LibraryView do
     # An empty library has rows but no selection in the track pane, and a
     # menu over nothing would be three actions that cannot do anything.
     it 'opens nothing when the pane has no row selected' do
-      view.instance_variable_get(:@tracks)[:selection].unselect_all
+      view.instance_variable_get(:@tracks)[:selection].selected = Gtk::INVALID_LIST_POSITION
       on_screen
 
       expect(press_menu_key(:@tracks)).to be(false)

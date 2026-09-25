@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -24,6 +24,7 @@ jobs:
       GSK_RENDERER: cairo
       LIBGL_ALWAYS_SOFTWARE: '1'
       LOAMP_SCREENSHOT_DIR: tmp/e2e-screenshots
+      TAGLIB_DIR: /usr/local
     steps:
       - uses: actions/checkout@v4
 
@@ -32,16 +33,34 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libgtk-4-dev libadwaita-1-dev gir1.2-adw-1 libtag1-dev \
+            libgtk-4-dev libadwaita-1-dev gir1.2-adw-1 libgirepository1.0-dev \
             libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
             gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
             gstreamer1.0-plugins-ugly gstreamer1.0-tools \
-            build-essential pkg-config dbus xvfb
+            build-essential pkg-config cmake libutfcpp-dev zlib1g-dev curl dbus xvfb
+
+      # taglib-ruby 2.x needs TagLib >= 2.0.1; Ubuntu 24.04 ships TagLib 1.13.
+      - name: Build TagLib 2.0.2
+        working-directory: ${{ runner.temp }}
+        run: |
+          curl --fail --location --retry 3 \
+            https://github.com/taglib/taglib/releases/download/v2.0.2/taglib-2.0.2.tar.gz \
+            --output taglib-2.0.2.tar.gz
+          tar -xzf taglib-2.0.2.tar.gz
+          cmake -S taglib-2.0.2 -B taglib-build \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$TAGLIB_DIR" \
+            -DCMAKE_INSTALL_LIBDIR=lib -DBUILD_SHARED_LIBS=ON -DBUILD_TESTING=OFF
+          cmake --build taglib-build --parallel 2
+          sudo cmake --install taglib-build
+          sudo ldconfig
+          pkg-config --atleast-version=2.0.1 taglib
+          pkg-config --modversion taglib gobject-introspection-1.0
 
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: ${{ matrix.ruby-version }}
           bundler-cache: true
+          cache-version: taglib-2.0.2
 
       - name: RuboCop
         run: bundle exec rubocop

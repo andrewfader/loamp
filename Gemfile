@@ -19,6 +19,8 @@ gem 'sqlite3', '~> 2.0'
 gem 'rexml', '~> 3.4'
 
 group :development, :test do
+  # RuboCop's parallel 2.x dependency no longer supports Ruby 3.2.
+  gem 'parallel', '< 2.0'
   gem 'rake', '~> 13.0'
   gem 'rspec', '~> 3.12'
   gem 'rubocop', '~> 1.0'

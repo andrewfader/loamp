@@ -5,6 +5,10 @@
 
 A music player built with Ruby, GTK4 and libadwaita for Linux.
 
+## Screenshot
+
+![LOAMP Radio page showing KEXP search results](assets/screenshots/radio-search-results.png)
+
 ## Features
 
 - Native libadwaita interface: adaptive split view, header bar, toasts, and

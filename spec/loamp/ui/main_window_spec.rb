@@ -346,6 +346,7 @@ RSpec.describe Loamp::UI::MainWindow do
       main_window.present
 
       expect { main_window.send(:add_files, files) }.to change(playlist, :size).from(0).to(1)
+      engine.wait_for_state(:playing, timeout: 5)
       settle_gtk
 
       expect(playlist.current_track.file_path).to eq(AudioFixtures.sample_mp3)

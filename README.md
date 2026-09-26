@@ -7,7 +7,7 @@ A music player built with Ruby, GTK4 and libadwaita for Linux.
 
 ## Screenshot
 
-![LOAMP Radio page showing KEXP search results](assets/screenshots/radio-search-results.png)
+![LOAMP main window playing turkey_in_the_straw](assets/screenshots/main-window-playing.png)
 
 ## Features
 

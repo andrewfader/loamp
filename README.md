@@ -7,7 +7,7 @@ A music player built with Ruby, GTK4 and libadwaita for Linux.
 
 ## Screenshot
 
-![LOAMP main window playing turkey_in_the_straw](assets/screenshots/main-window-playing.png)
+![LOAMP main window playing Relationships by Haim](assets/screenshots/main-window-playing.png)
 
 ## Features
 

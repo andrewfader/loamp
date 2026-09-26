@@ -342,15 +342,17 @@ RSpec.describe Loamp::UI::MainWindow do
   describe 'file dialog functionality' do
     it 'adds real Gio file selections and captures the resulting window' do
       files = Gio::ListStore.new(Gio::File.gtype)
-      files.append(Gio::File.new_for_path(AudioFixtures.sample_mp3))
+      files.append(Gio::File.new_for_path(AudioFixtures.sample_mp3_with_tags))
       main_window.present
 
       expect { main_window.send(:add_files, files) }.to change(playlist, :size).from(0).to(1)
       engine.wait_for_state(:playing, timeout: 5)
       settle_gtk
 
-      expect(playlist.current_track.file_path).to eq(AudioFixtures.sample_mp3)
-      expect(capture_widget(main_window, 'main-window-file-added')).to end_with('.png')
+      expect(playlist.current_track.file_path).to eq(AudioFixtures.sample_mp3_with_tags)
+      expect(playlist.current_track.title).to eq('Relationships')
+      expect(playlist.current_track.artist).to eq('Haim')
+      expect(capture_widget(main_window, 'main-window-playing')).to end_with('.png')
     end
 
     it 'autoplays when the first tracks land on an empty idle queue' do

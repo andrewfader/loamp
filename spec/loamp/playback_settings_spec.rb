@@ -19,7 +19,7 @@ RSpec.describe Loamp::PlaybackSettings do
     settings.save
 
     expect(described_class.new(path: path).to_h)
-      .to eq(replaygain_mode: :album, eq_preset: :rock, crossfade_seconds: 0.0)
+      .to eq(described_class::DEFAULTS.merge(replaygain_mode: :album, eq_preset: :rock))
   end
 
   it 'falls back safely from a corrupt file' do

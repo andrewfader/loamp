@@ -42,10 +42,8 @@ module Loamp
         end
 
         @playlist.append(track)
-        @playlist.set_current_track(@playlist.size - 1)
         @callbacks[:playlist_changed]&.call
-        @player.stop
-        @player.play
+        @player.play_index(@playlist.size - 1)
         track
       end
 

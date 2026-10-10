@@ -4,6 +4,11 @@ module Loamp
   module UI
     # Player controls widget with play/pause/stop buttons, volume, and progress
     class PlayerControls < Gtk::Box
+      # How long the slider waits after the last movement before seeking.
+      # Short enough to feel immediate, long enough that a drag does not
+      # flush-seek the pipeline sixty times a second.
+      SEEK_DEBOUNCE_MS = 120
+
       def initialize(player)
         super(:vertical, 10)
         @player = player
@@ -18,12 +23,21 @@ module Loamp
         update_track_progress
       end
 
+      # The queue changed under the transport: a next button that was dead
+      # because the queue was empty has to come back when something is added.
+      def refresh_controls
+        update_controls
+      end
+
       private
 
       def setup_player_callbacks
         @player.on_state_changed do |state|
           update_play_pause_button(state)
           update_controls
+          # A stopped pipeline has no position; the readout should not keep
+          # the number it froze at.
+          update_track_progress if state == :stopped
         end
 
         @player.on_position_changed do |position, duration|
@@ -222,15 +236,16 @@ module Loamp
           refresh_volume_label
         end
 
-        seek_gesture = Gtk::GestureClick.new
-        seek_gesture.signal_connect('pressed') do
-          @seeking = true
+        # change-value fires for every way a person moves a slider -- drag,
+        # click in the trough, keyboard, scroll wheel -- and not for the
+        # engine's own position updates. A click gesture alongside the
+        # range's own drag gesture was unreliable: GTK denies the sequence
+        # to it once the range claims a drag, so a drag never saw "released"
+        # and the slider stayed frozen for the rest of the track.
+        @progress_scale.signal_connect('change-value') do |_scale, _scroll, value|
+          begin_seek(value)
+          false
         end
-        seek_gesture.signal_connect('released') do
-          @seeking = false
-          @player.seek(@progress_scale.value) if @progress_scale.sensitive?
-        end
-        @progress_scale.add_controller(seek_gesture)
 
         @volume_scale.signal_connect('value-changed') do
           next if @updating_volume
@@ -240,6 +255,36 @@ module Loamp
           refresh_volume_label
           refresh_mute_button
         end
+      end
+
+      def begin_seek(value)
+        return unless @progress_scale.sensitive?
+
+        @seeking = true
+        @seek_target = value.to_f
+        @position_label.text = format_time(@seek_target)
+        schedule_seek
+      end
+
+      def schedule_seek
+        return if @seek_timer
+
+        @seek_timer = GLib::Timeout.add(SEEK_DEBOUNCE_MS) do
+          @seek_timer = nil
+          finish_seek
+          false
+        end
+      end
+
+      def finish_seek
+        target = @seek_target
+        @seek_target = nil
+        @seeking = false
+        return unless target
+
+        limit = @player.duration
+        target = target.clamp(0.0, limit) if limit.positive?
+        @player.seek(target)
       end
 
       def update_play_pause_button(state)

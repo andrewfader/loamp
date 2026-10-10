@@ -93,7 +93,9 @@ module Loamp
         folders = @library.stored_watch_folders
         return false if folders.empty? || @library_view.scanning?
 
-        @library_view.scan(folders)
+        # Nobody asked for this scan, so it only speaks up when it found
+        # something. "Nothing new to index" on every launch is noise.
+        @library_view.scan(folders, quiet: true)
       end
 
       private
@@ -270,6 +272,7 @@ module Loamp
         @queue_empty.visible = empty
         @playlist_view.visible = !empty
         update_queue_summary
+        @player_controls&.refresh_controls
       end
 
       def build_queue_footer
@@ -517,6 +520,7 @@ module Loamp
         @playlist_view.refresh
         update_queue_empty_state
         @track_info.clear
+        @lyrics_view.clear
         update_window_title(nil)
         notify('Playlist cleared')
       end

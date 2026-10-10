@@ -16,6 +16,7 @@ module Loamp
       @playlist = Playlist.new
       @playback_settings = PlaybackSettings.new
       @player = Player.new(@playlist, engine: build_audio_engine)
+      restore_playback_options
       # One cache, shared: art fetched for the now-playing pane is the same art
       # the desktop widget shows, and neither should fetch it twice.
       @art_cache = ArtCache.new
@@ -53,6 +54,7 @@ module Loamp
 
       app.signal_connect('shutdown') do
         @main_window&.shutdown
+        @player.shutdown
         @art_cache.shutdown
         @lyrics_cache.shutdown
         @mpris.stop
@@ -78,6 +80,7 @@ module Loamp
       @player.on_track_changed { @mpris.track_changed }
       @player.on_state_changed { @mpris.state_changed }
       @player.on_volume_changed { @mpris.volume_changed }
+      @player.on_options_changed { @mpris.options_changed }
       @player.on_seeked { |position| @mpris.seeked(position) }
     end
 
@@ -114,6 +117,18 @@ module Loamp
     end
 
     private
+
+    # Shuffle and repeat come back the way they were left, and every change
+    # from then on is written down.
+    def restore_playback_options
+      @player.shuffle = @playback_settings.shuffle?
+      @player.repeat_mode = @playback_settings.repeat_mode
+      @player.on_options_changed do
+        @playback_settings.shuffle = @player.shuffle?
+        @playback_settings.repeat_mode = @player.repeat_mode
+        @playback_settings.save
+      end
+    end
 
     def build_audio_engine
       seconds = @playback_settings.crossfade_seconds

@@ -38,11 +38,11 @@ RSpec.describe Loamp::UI::ProviderView do
 
   it 'queues a playable result' do
     view.instance_variable_set(:@items, [item])
-    allow(player).to receive(:play)
+    allow(player).to receive(:play_index).and_call_original
 
     expect(view.play(0)).to eq(track)
     expect(playlist.current_track).to eq(track)
-    expect(player).to have_received(:play)
+    expect(player).to have_received(:play_index).with(playlist.size - 1)
   end
 
   it 'notifies when an item cannot be played' do

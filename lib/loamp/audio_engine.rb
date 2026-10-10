@@ -49,12 +49,12 @@ module Loamp
 
       @bus = @pipeline.bus
       @uri = nil
-      @volume = 100
       @callbacks = Hash.new { |_hash, _key| ->(*) {} }
       @errors_seen = 0
       @end_of_stream_count = 0
       @stream_start_count = 0
       @settings = settings
+      @volume = @settings.volume
 
       attach_audio_sink(audio_sink || FILTER_SINK)
       self.replaygain_mode = @settings.replaygain_mode
@@ -98,6 +98,7 @@ module Loamp
 
     def load(location)
       stop
+      @visualizer&.prepare_for_reload
       @uri = to_uri(location)
       @pipeline.set_property('uri', @uri)
       @uri
@@ -125,13 +126,22 @@ module Loamp
       change_state(Gst::State::PAUSED)
     end
 
+    # Going to NULL flushes the bus, so the state-changed message for this
+    # transition is never delivered. The engine announces it itself, or the
+    # transport would keep showing a pause button for a pipeline that is gone.
     def stop
+      was_stopped = stopped?
       change_state(Gst::State::NULL)
+      @callbacks[:state_changed].call(:stopped) unless was_stopped
     end
 
     def seek(seconds)
       return unless @uri && !stopped?
 
+      # A seek sent while the pipeline is still prerolling is dropped on the
+      # floor. Finish the state change first; it is a few milliseconds for
+      # a local file.
+      settle
       target = [seconds.to_f, 0.0].max
       target = [target, duration].min if duration.positive?
 
@@ -152,10 +162,22 @@ module Loamp
 
     # --- State ------------------------------------------------------------
 
+    # A state change in flight counts as done. A pipeline that has just been
+    # asked to play sits in READY with PLAYING pending for a few hundred
+    # milliseconds while it prerolls; reporting it as stopped meanwhile made a
+    # pause pressed in that window a no-op, and made the first position ticks
+    # go unpublished.
     def state
       return :stopped unless @pipeline
 
-      case @pipeline.get_state(0)[1]
+      result, current, pending = @pipeline.get_state(0)
+      effective = if result == Gst::StateChangeReturn::ASYNC && pending != Gst::State::VOID_PENDING
+                    pending
+                  else
+                    current
+                  end
+
+      case effective
       when Gst::State::PLAYING then :playing
       when Gst::State::PAUSED then :paused
       else :stopped
@@ -179,6 +201,7 @@ module Loamp
     def volume=(level)
       @volume = level.to_i.clamp(0, 100)
       apply_volume
+      persist_volume
       @volume
     end
 
@@ -257,8 +280,10 @@ module Loamp
       end
     end
 
+    # Waits for the pipeline to actually reach the state, not merely to have
+    # been asked for it -- #state reports a pending change as done.
     def wait_for_state(target, timeout: 5)
-      wait_until(timeout) { state == target }
+      wait_until(timeout) { settled_state == target }
     end
 
     def wait_for_end_of_stream(timeout: 10)
@@ -338,6 +363,19 @@ module Loamp
       message.empty? ? 'Unknown playback error' : message
     end
 
+    def settled_state
+      return :stopped unless @pipeline
+
+      result, current, = @pipeline.get_state(0)
+      return :stopped if result == Gst::StateChangeReturn::ASYNC
+
+      case current
+      when Gst::State::PLAYING then :playing
+      when Gst::State::PAUSED then :paused
+      else :stopped
+      end
+    end
+
     def change_state(gst_state)
       return unless @pipeline
 
@@ -367,6 +405,13 @@ module Loamp
       @replaygain = sink.get_by_name('loamp-replaygain') if sink.respond_to?(:get_by_name)
       @replaygain_selector = sink.get_by_name('loamp-rg-selector') if sink.respond_to?(:get_by_name)
       @equalizer = sink.get_by_name('loamp-equalizer') if sink.respond_to?(:get_by_name)
+    end
+
+    def persist_volume
+      return unless @settings && @settings.volume != @volume
+
+      @settings.volume = @volume
+      @settings.save
     end
 
     def persist_processing_settings

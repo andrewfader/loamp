@@ -30,14 +30,14 @@ module Loamp
         @stack.add_named(@list, 'synced')
         @stack.add_named(@plain, 'plain')
 
-        scroller = Gtk::ScrolledWindow.new
-        scroller.hscrollbar_policy = :never
-        scroller.vexpand = true
-        scroller.margin_start = 12
-        scroller.margin_end = 12
-        scroller.margin_bottom = 12
-        scroller.child = @stack
-        append(scroller)
+        @scroller = Gtk::ScrolledWindow.new
+        @scroller.hscrollbar_policy = :never
+        @scroller.vexpand = true
+        @scroller.margin_start = 12
+        @scroller.margin_end = 12
+        @scroller.margin_bottom = 12
+        @scroller.child = @stack
+        append(@scroller)
       end
 
       def show_document(track, document)
@@ -65,7 +65,10 @@ module Loamp
 
         @rows[@active_index]&.remove_css_class('accent') unless @active_index.nil?
         @active_index = index
-        @rows[index]&.add_css_class('accent') unless index.nil?
+        return if index.nil?
+
+        @rows[index]&.add_css_class('accent')
+        keep_in_view(@rows[index])
       end
 
       def clear
@@ -76,6 +79,22 @@ module Loamp
       end
 
       private
+
+      # Follows the song: the highlighted line is kept around the middle of
+      # the pane rather than left to disappear below it after ten lines.
+      def keep_in_view(row)
+        return unless row && @scroller
+
+        bounds = row.compute_bounds(@list)
+        return unless bounds
+
+        adjustment = @scroller.vadjustment
+        target = bounds.y + (bounds.height / 2.0) - (adjustment.page_size / 2.0)
+        upper = [adjustment.upper - adjustment.page_size, 0].max
+        adjustment.value = target.clamp(0, upper)
+      rescue StandardError
+        nil
+      end
 
       def add_line(text)
         label = Gtk::Label.new(text.to_s.empty? ? '♪' : text)

@@ -82,7 +82,7 @@ RSpec.describe 'Podcast browsing', :feature do
     store.remember_position(episode.guid, 45)
     open_podcasts(popular: [])
     @view.show_subscriptions
-    allow(player).to receive(:play)
+    allow(player).to receive(:play_index).and_call_original
     allow(player).to receive(:playing?).and_return(true)
     allow(player).to receive(:seek)
 
@@ -90,7 +90,7 @@ RSpec.describe 'Podcast browsing', :feature do
 
     expect(track.file_path).to eq(episode.media_url)
     expect(playlist.current_track).to equal(track)
-    expect(player).to have_received(:play)
+    expect(player).to have_received(:play_index).with(playlist.size - 1)
   end
 
   scenario 'unsubscribing removes the show from My Shows' do

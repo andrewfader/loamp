@@ -45,8 +45,12 @@ module Loamp
 
       private
 
+      # Streams carry a station or show name where a title would be; there
+      # are no lyrics to find for those, so no request is made.
       def eligible?(track)
-        track && !track.title.to_s.empty? && !track.artist.to_s.empty?
+        return false unless track && !track.title.to_s.empty? && !track.artist.to_s.empty?
+
+        !(track.respond_to?(:remote?) && track.remote?)
       end
 
       def claim(key)

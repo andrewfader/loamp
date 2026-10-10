@@ -22,6 +22,7 @@ module Loamp
       @repeat_mode = :off
       @shuffle = false
       @pending_index = nil
+      @consecutive_failures = 0
       @callbacks = Hash.new { |hash, key| hash[key] = [] }
 
       connect_engine
@@ -59,6 +60,12 @@ module Loamp
       @callbacks[:volume_changed] << block
     end
 
+    # Shuffle or repeat changed, from any direction: the transport buttons,
+    # a keyboard shortcut or an MPRIS client all need to agree afterwards.
+    def on_options_changed(&block)
+      @callbacks[:options_changed] << block
+    end
+
     def on_stream_metadata(&block)
       @callbacks[:stream_metadata] << block
     end
@@ -70,6 +77,16 @@ module Loamp
       return resume if paused?
 
       start(current_track)
+    end
+
+    # Starts the given queue entry from the top, whatever is playing now.
+    # This is what activating a row means; #play alone would carry on with
+    # the current track if one were already sounding.
+    def play_index(index)
+      return nil unless @playlist.set_current_track(index)
+
+      start(current_track)
+      current_track
     end
 
     def pause
@@ -101,8 +118,20 @@ module Loamp
 
     def seek(position)
       result = @engine.seek(position)
-      publish(:seeked, @engine.position)
+      now = @engine.position
+      publish(:seeked, now)
+      # A paused player gets no ticks, so the jump is reported here or the
+      # readout stays where it was until playback resumes.
+      publish(:position_changed, now, duration)
       result
+    end
+
+    # Lets go of the pipeline. Called once, when the application quits:
+    # a GStreamer pipeline still running while Ruby tears itself down is a
+    # crash at exit rather than a clean one.
+    def shutdown
+      @pending_index = nil
+      @engine.shutdown if @engine.respond_to?(:shutdown)
     end
 
     # --- State ------------------------------------------------------------
@@ -122,7 +151,10 @@ module Loamp
     end
 
     def repeat_mode=(mode)
-      @repeat_mode = mode if REPEAT_MODES.include?(mode)
+      return unless REPEAT_MODES.include?(mode)
+
+      @repeat_mode = mode
+      publish(:options_changed)
     end
 
     def shuffle?
@@ -132,6 +164,7 @@ module Loamp
     def shuffle=(enabled)
       @shuffle = ![nil, false, 0].include?(enabled)
       @shuffle ? @playlist.enable_shuffle : @playlist.disable_shuffle
+      publish(:options_changed)
     end
 
     # --- Volume -----------------------------------------------------------
@@ -209,10 +242,11 @@ module Loamp
     def connect_engine
       @engine.on_state_changed { |state| publish(:state_changed, state) }
       @engine.on_error { |message| handle_error(message) }
-      @engine.on_end_of_stream { publish(:state_changed, :stopped) }
+      # The engine announces its own return to stopped; nothing to add here.
+      @engine.on_end_of_stream { @pending_index = nil }
       @engine.on_about_to_finish { queue_following_track }
-      @engine.on_stream_start { commit_pending_track }
-      @engine.on_stream_metadata { |metadata| publish(:stream_metadata, metadata) }
+      @engine.on_stream_start { stream_started }
+      @engine.on_stream_metadata { |metadata| relay_stream_metadata(metadata) }
     end
 
     def start(track)
@@ -255,6 +289,11 @@ module Loamp
       @playlist.next_index(wrap: repeat_all?)
     end
 
+    def stream_started
+      @consecutive_failures = 0
+      commit_pending_track
+    end
+
     def commit_pending_track
       return unless @pending_index
 
@@ -267,9 +306,41 @@ module Loamp
       publish(:track_changed, current_track)
     end
 
+    # A file that will not play is reported and then skipped, the way any
+    # jukebox treats a scratched disc. One bad download must not end the
+    # evening. Skipping stops once every entry has failed in a row, so a
+    # queue of nothing but dead links does not spin forever.
     def handle_error(message)
+      failed_index = @pending_index || @playlist.current_index
       @pending_index = nil
       publish(:error, message)
+      skip_past_failure(failed_index)
+    end
+
+    def skip_past_failure(failed_index)
+      return if @playlist.empty?
+
+      @consecutive_failures += 1
+      if @consecutive_failures >= @playlist.size
+        @consecutive_failures = 0
+        return
+      end
+
+      @playlist.set_current_track(failed_index)
+      index = @playlist.next_index(wrap: repeat_all?)
+      advance_to(index) if index
+    end
+
+    # Tags arriving on the pipeline only mean something for a live stream,
+    # where they are the only way to learn what is playing. For a local file
+    # they merely repeat what TagLib already read -- and with gapless
+    # playback they arrive for the next track while this one is still
+    # sounding, which put the wrong title on the pane for a second or two.
+    def relay_stream_metadata(metadata)
+      track = current_track
+      return unless track.respond_to?(:remote?) && track.remote?
+
+      publish(:stream_metadata, metadata)
     end
 
     def repeat_all?

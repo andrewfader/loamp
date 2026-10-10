@@ -24,7 +24,7 @@ module Loamp
       @visualizer_valve = @mixer.get_by_name('loamp-crossfade-visualizer-valve')
       @visualizer_element = @mixer.get_by_name('loamp-crossfade-visualizer-plugin')
       @active = 0
-      @volume = 100
+      @volume = settings.volume
       @callbacks = Hash.new { |_hash, _key| ->(*) {} }
       @uri = nil
       self.replaygain_mode = settings.replaygain_mode
@@ -64,6 +64,8 @@ module Loamp
     end
 
     def pause
+      return unless playing?
+
       current.set_state(Gst::State::PAUSED)
       inactive.set_state(Gst::State::PAUSED) if @fading
       @callbacks[:state_changed].call(:paused)
@@ -84,10 +86,18 @@ module Loamp
       @mixer = nil
     end
 
+    # Like AudioEngine#state, a pending transition is reported as done.
     def state
       return :stopped unless current
 
-      case current.get_state(0)[1]
+      result, now, pending = current.get_state(0)
+      effective = if result == Gst::StateChangeReturn::ASYNC && pending != Gst::State::VOID_PENDING
+                    pending
+                  else
+                    now
+                  end
+
+      case effective
       when Gst::State::PLAYING then :playing
       when Gst::State::PAUSED then :paused
       else :stopped
@@ -108,6 +118,7 @@ module Loamp
     def volume=(level)
       @volume = level.to_i.clamp(0, 100)
       apply_fade
+      persist_volume
     end
 
     def muted? = @muted == true
@@ -317,6 +328,13 @@ module Loamp
     end
 
     def master_gain = (@volume / 100.0)**3
+
+    def persist_volume
+      return unless @settings && @settings.volume != @volume
+
+      @settings.volume = @volume
+      @settings.save
+    end
 
     def save_settings
       return unless @settings

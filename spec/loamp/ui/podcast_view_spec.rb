@@ -74,13 +74,13 @@ RSpec.describe Loamp::UI::PodcastView do
   it 'queues a playable episode' do
     store.subscribe(feed)
     view.show_subscriptions
-    allow(player).to receive(:play)
+    allow(player).to receive(:play_index).and_call_original
 
     track = view.play_episode(0)
 
     expect(track.file_path).to eq('https://cdn.test/one.mp3')
     expect(playlist.current_track).to equal(track)
-    expect(player).to have_received(:play)
+    expect(player).to have_received(:play_index).with(playlist.size - 1)
   end
 
   it 'ignores an empty subscribe URL' do

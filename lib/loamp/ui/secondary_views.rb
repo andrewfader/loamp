@@ -78,12 +78,10 @@ module Loamp
         @station = station
         @playlist.clear
         tracks.each { |track| @playlist.append(track) }
-        @playlist.set_current_track(0)
         @playlist_view.refresh
         update_queue_empty_state
         @graph_view&.station_active(true)
-        @player.stop
-        @player.play
+        @player.play_index(0)
         notify("Started a station from #{artist}")
       end
 

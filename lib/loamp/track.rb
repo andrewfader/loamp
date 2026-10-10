@@ -36,9 +36,22 @@ module Loamp
       File.basename(@file_path, File.extname(@file_path))
     end
 
+    # Minutes and seconds, with an hours figure once there is one: a
+    # ninety-minute podcast reads as 1:30:00, not 90:00.
     def duration_formatted
-      total = @duration.to_i
-      format('%d:%02d', total / 60, total % 60)
+      total = [@duration.to_i, 0].max
+      hours, remainder = total.divmod(3600)
+      minutes, seconds = remainder.divmod(60)
+      return format('%d:%02d:%02d', hours, minutes, seconds) if hours.positive?
+
+      format('%d:%02d', minutes, seconds)
+    end
+
+    # Something that plays from the network rather than from disk: a radio
+    # station, a podcast episode, a streaming-server track.
+    def remote?
+      path = @file_path.to_s
+      FileUri.uri?(path) && !path.start_with?('file://')
     end
 
     # Reads the embedded cover art from disk on demand.

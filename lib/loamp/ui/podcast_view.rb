@@ -98,12 +98,11 @@ module Loamp
         return false unless episode&.playable?
 
         track = @playlist.append(episode.to_track)
-        @playlist.set_current_track(@playlist.size - 1)
         @current_episode = episode
+        @episode_track = track
         @last_position_write = 0
         @callbacks[:playlist_changed]&.call
-        @player.stop
-        @player.play
+        @player.play_index(@playlist.size - 1)
         resume_when_ready(@store.position(episode.guid))
         track
       end
@@ -163,22 +162,31 @@ module Loamp
         @status.xalign = 0
         @status.add_css_class('dim-label')
 
-        toolbar = Gtk::Box.new(:horizontal, 6)
-        toolbar.margin_top = 12
-        toolbar.margin_start = 12
-        toolbar.margin_end = 12
-        toolbar.append(@search_entry)
-        toolbar.append(search)
-        toolbar.append(top)
-        toolbar.append(mine)
-        toolbar.append(@url_entry)
-        toolbar.append(subscribe)
-        toolbar.append(@spinner)
-        append(toolbar)
+        append(toolbar_for([[@search_entry, search], [top, mine], [@url_entry, subscribe]]))
         append(@status)
         @status.margin_start = 12
         @status.margin_end = 12
         @status.margin_bottom = 6
+      end
+
+      # Each group wraps as a unit under the one before it when the page is
+      # narrow. Side by side they needed seven hundred pixels, which is more
+      # than the whole content pane has at the default window size.
+      def toolbar_for(groups)
+        toolbar = Adw::WrapBox.new
+        toolbar.child_spacing = 6
+        toolbar.line_spacing = 6
+        toolbar.margin_top = 12
+        toolbar.margin_start = 12
+        toolbar.margin_end = 12
+        groups.each_with_index do |children, index|
+          group = Gtk::Box.new(:horizontal, 6)
+          group.hexpand = index.zero?
+          children.each { |child| group.append(child) }
+          toolbar.append(group)
+        end
+        toolbar.append(@spinner)
+        toolbar
       end
 
       def build_browser
@@ -351,25 +359,35 @@ module Loamp
         box
       end
 
+      # Only the episode's own position is remembered. The player keeps
+      # ticking after the listener moves on to music, and those positions
+      # used to be written over the episode's resume point.
       def watch_playback
         @player.on_position_changed do |position, _duration|
-          next if @shutdown
-          next unless @current_episode && position - @last_position_write >= POSITION_WRITE_INTERVAL
+          next if @shutdown || @current_episode.nil?
+          next unless @player.current_track.equal?(@episode_track)
+          next unless position - @last_position_write >= POSITION_WRITE_INTERVAL
 
           @store.remember_position(@current_episode.guid, position)
           @last_position_write = position
         end
       end
 
+      # A seek only lands once the stream has prerolled and its length is
+      # known, so that is what readiness means here -- not merely that play
+      # was requested. Gives up if the listener has moved on meanwhile.
       def resume_when_ready(position)
         return unless position.positive?
 
+        track = @episode_track
         attempts = 0
         GLib::Timeout.add(100) do
           attempts += 1
-          ready = @player.playing?
+          next false if @shutdown || !@player.current_track.equal?(track)
+
+          ready = @player.playing? && @player.duration.positive?
           @player.seek(position) if ready
-          !ready && attempts < 50 && !@shutdown
+          !ready && attempts < 100
         end
       end
 

@@ -71,13 +71,13 @@ RSpec.describe Loamp::UI::RadioView do
   it 'queues and starts the chosen station' do
     view.search_for('kexp')
     wait_for_result { view.visible_stations.any? }
-    allow(player).to receive(:play)
+    allow(player).to receive(:play_index).and_call_original
 
     track = view.play_station(0)
 
     expect(track.file_path).to eq('https://radio.test/live')
     expect(playlist.current_track).to equal(track)
-    expect(player).to have_received(:play)
+    expect(player).to have_received(:play_index).with(playlist.size - 1)
   end
 
   it 'announces playlist and playback changes' do
@@ -87,7 +87,7 @@ RSpec.describe Loamp::UI::RadioView do
     view.on_notify { |message| notice = message }
     view.search_for('kexp')
     wait_for_result { view.visible_stations.any? }
-    allow(player).to receive(:play)
+    allow(player).to receive(:play_index).and_call_original
 
     view.play_station(0)
 
@@ -108,7 +108,7 @@ RSpec.describe Loamp::UI::RadioView do
     allow(browser).to receive(:search).and_return([station])
     recent_view.search_for('kexp')
     wait_for_result { recent_view.visible_stations.any? }
-    allow(player).to receive(:play)
+    allow(player).to receive(:play_index).and_call_original
 
     recent_view.play_station(0)
     recent_view.show_history

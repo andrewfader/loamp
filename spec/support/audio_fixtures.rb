@@ -134,8 +134,23 @@ module AudioFixtures
 
   # An engine that runs the real pipeline but sends audio nowhere, so specs
   # exercise genuine playback without making noise.
+  # Settings live under the fixture directory: an engine built with the
+  # defaults would read and overwrite the developer's own playback.json.
   def silent_engine
-    Loamp::AudioEngine.new(audio_sink: 'fakesink sync=true')
+    Loamp::AudioEngine.new(audio_sink: 'fakesink sync=true', settings: fresh_settings)
+  end
+
+  def fresh_settings
+    Loamp::PlaybackSettings.new(path: File.join(settings_dir, "#{SecureRandom.hex(4)}.json"))
+  end
+
+  # Emptied once per run, so a suite that builds an engine per example does
+  # not leave hundreds of one-line files behind.
+  def settings_dir
+    @settings_dir ||= File.join(fixture_dir, 'settings').tap do |dir|
+      FileUtils.rm_rf(dir)
+      FileUtils.mkdir_p(dir)
+    end
   end
 
   # Path to a real-world MP3 shipped with the repo. Carries no tags at all,

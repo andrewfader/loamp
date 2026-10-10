@@ -27,6 +27,10 @@ module Loamp
     def track_started(track)
       return if @shutdown
 
+      # A live stream has no length and no song of its own; announcing a
+      # station name as "now playing" would be wrong on every scrobble site.
+      track = nil if track && track.duration.to_f <= 0
+
       @track = track
       @started_at = @clock.call
       @submitted = false

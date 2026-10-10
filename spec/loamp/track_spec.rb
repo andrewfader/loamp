@@ -112,7 +112,7 @@ RSpec.describe Loamp::Track do
       track = described_class.new('/tmp/test.mp3')
       track.duration = 3665 # 1 hour, 1 minute, 5 seconds
       
-      expect(track.duration_formatted).to eq('61:05')
+      expect(track.duration_formatted).to eq('1:01:05')
     end
   end
   

@@ -489,6 +489,41 @@ RSpec.describe Loamp::Playlist do
       end
     end
 
+    describe 'adding tracks while shuffled' do
+      it 'fills an empty shuffled queue without re-dealing' do
+        empty_playlist = described_class.new
+        empty_playlist.enable_shuffle
+
+        3.times { |i| empty_playlist.append(build(:track, file_path: "/tmp/s#{i}.mp3")) }
+
+        indices = empty_playlist.instance_variable_get(:@shuffle_indices)
+        expect(indices.sort).to eq([0, 1, 2])
+        expect(indices.first).to eq(empty_playlist.current_index)
+      end
+
+      it 'puts a new track somewhere after the current one, keeping what came before' do
+        playlist.set_current_track(1)
+        playlist.enable_shuffle
+        before = playlist.instance_variable_get(:@shuffle_indices).dup
+
+        playlist.append(build(:track, file_path: '/tmp/new.mp3'))
+
+        after = playlist.instance_variable_get(:@shuffle_indices)
+        expect(after - [3]).to eq(before)
+        expect(after.index(3)).to be > after.index(1)
+      end
+
+      it 'keeps the order when a track is removed' do
+        playlist.enable_shuffle
+        before = playlist.instance_variable_get(:@shuffle_indices).dup
+
+        playlist.remove_at(2)
+
+        after = playlist.instance_variable_get(:@shuffle_indices)
+        expect(after).to eq(before.reject { |i| i == 2 }.map { |i| i > 2 ? i - 1 : i })
+      end
+    end
+
     describe '#shuffle=' do
       it 'enables shuffle when set to true' do
         expect(playlist).to receive(:enable_shuffle)

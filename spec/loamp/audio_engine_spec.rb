@@ -5,7 +5,7 @@ require 'spec_helper'
 RSpec.describe Loamp::AudioEngine do
   # A silent sink keeps the suite quiet while still running the real GStreamer
   # pipeline in real time, so positions and end-of-stream behave as in production.
-  let(:engine) { described_class.new(audio_sink: 'fakesink sync=true') }
+  let(:engine) { AudioFixtures.silent_engine }
   let(:tone) { AudioFixtures.tone(seconds: 2) }
 
   after { engine.shutdown }

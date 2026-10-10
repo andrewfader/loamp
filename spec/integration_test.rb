@@ -31,7 +31,8 @@ module IntegrationTest
 
     # A real pipeline sending its audio nowhere: position only means anything
     # once something is actually decoding.
-    engine = Loamp::AudioEngine.new(audio_sink: 'fakesink sync=true')
+    settings = Loamp::PlaybackSettings.new(path: File.join(Dir.tmpdir, 'loamp-integration-playback.json'))
+    engine = Loamp::AudioEngine.new(audio_sink: 'fakesink sync=true', settings: settings)
     player = Loamp::Player.new(playlist, engine: engine)
     player.set_volume(150)
     player.play

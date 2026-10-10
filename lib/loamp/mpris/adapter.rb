@@ -243,8 +243,7 @@ module Loamp
 
         playlist = @player.playlist
         playlist.add_track(path)
-        playlist.set_current_track(playlist.size - 1)
-        @player.play
+        @player.play_index(playlist.size - 1)
       end
 
       def root_property(name)

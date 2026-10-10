@@ -106,9 +106,12 @@ module Loamp
       end
 
       # Indexes folders in the background; the UI stays live throughout.
-      def scan(directories)
+      # A quiet scan reports only when it changed something; the launch-time
+      # rescan uses that so an unchanged collection does not toast every time.
+      def scan(directories, quiet: false)
         return false if @shutdown || @scanner.running?
 
+        @quiet_scan = quiet
         @progress.fraction = 0
         @progress.visible = true
 
@@ -697,11 +700,9 @@ module Loamp
         # The tracks came out of the index with their tags already read;
         # #append keeps it that way rather than reopening every file.
         tracks.each { |track| @playlist.append(track) }
-        @playlist.set_current_track(index)
 
         announce_playlist_change
-        @player.stop
-        @player.play
+        @player.play_index(index)
       end
 
       def enqueue_tracks(tracks, description)
@@ -767,7 +768,8 @@ module Loamp
         return notify("Could not index folder: #{result.message}") if result.is_a?(Exception)
 
         refresh
-        notify(scan_summary(result))
+        changed = result.added.positive? || result.updated.positive?
+        notify(scan_summary(result)) if changed || !@quiet_scan
       end
 
       def scan_summary(result)

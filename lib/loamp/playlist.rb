@@ -28,7 +28,7 @@ module Loamp
     # send TagLib back to the disk for every file.
     def append(track)
       @tracks << track
-      rebuild_shuffle_preserving_current if @shuffle_mode
+      add_to_shuffle(@tracks.length - 1) if @shuffle_mode
       track
     end
 
@@ -43,7 +43,7 @@ module Loamp
       @current_index -= 1 if index < @current_index
       destination = [@current_index + 1, @tracks.length].min
       @tracks.insert(destination, track)
-      rebuild_shuffle_preserving_current
+      remap_shuffle(index, destination)
       prioritize_in_shuffle(destination)
       destination
     end
@@ -59,7 +59,7 @@ module Loamp
       current = current_track
       @tracks.insert(destination, @tracks.delete_at(index))
       @current_index = @tracks.index(current) || 0
-      rebuild_shuffle_preserving_current
+      remap_shuffle(index, destination)
       destination
     end
 
@@ -145,7 +145,7 @@ module Loamp
       @current_index -= 1 if index < @current_index
       @current_index = @current_index.clamp(0, [@tracks.length - 1, 0].max)
 
-      reshuffle_after_removal
+      remove_from_shuffle(index)
       removed
     end
 
@@ -186,10 +186,19 @@ module Loamp
 
     alias select_track set_current_track
 
+    # The current track leads the shuffled order, so everything else in the
+    # queue is still to come. A permutation that happened to place it last
+    # would otherwise end the queue after one track.
     def enable_shuffle
       @shuffle_mode = true
-      @shuffle_indices = (0...@tracks.length).to_a.shuffle
-      @shuffle_position = @shuffle_indices.index(@current_index) || 0
+      if @tracks.empty?
+        @shuffle_indices = []
+      else
+        rest = (0...@tracks.length).to_a
+        rest.delete(@current_index)
+        @shuffle_indices = [@current_index] + rest.shuffle
+      end
+      @shuffle_position = 0
     end
 
     def disable_shuffle
@@ -232,8 +241,17 @@ module Loamp
       index.is_a?(Integer) && index >= 0 && index < @tracks.length
     end
 
-    def rebuild_shuffle_preserving_current
-      enable_shuffle if @shuffle_mode
+    # A track added while shuffle is on lands somewhere in what is still to
+    # come. Re-dealing the whole order would also reorder what the listener
+    # has already seen queued up next.
+    def add_to_shuffle(index)
+      return enable_shuffle if @shuffle_indices.length != @tracks.length - 1
+
+      current_position = @shuffle_indices.index(@current_index)
+      # Nothing was queued before this track, so it is the current one.
+      return enable_shuffle unless current_position
+
+      @shuffle_indices.insert(rand((current_position + 1)..@shuffle_indices.length), index)
     end
 
     def prioritize_in_shuffle(index)
@@ -245,12 +263,35 @@ module Loamp
       @shuffle_position = current_position
     end
 
-    # The shuffle permutation holds indices, so removing a track invalidates
-    # it. Rebuilding keeps shuffle pointing at tracks that still exist.
-    def reshuffle_after_removal
+    # The shuffle permutation holds indices, so moving a track means
+    # renumbering the entries the move shifted -- without changing the order
+    # they will play in.
+    def remap_shuffle(from, to)
       return unless @shuffle_mode
+      return enable_shuffle if @shuffle_indices.length != @tracks.length
 
-      enable_shuffle
+      @shuffle_indices.map! { |index| moved_index(index, from, to) }
+      @shuffle_position = @shuffle_indices.index(@current_index) || 0
+    end
+
+    # Where a track that sat at +index+ sits once the one at +from+ has been
+    # moved to +to+: the moved one lands on +to+ and the ones between shift
+    # one step towards the hole it left.
+    def moved_index(index, from, to)
+      return to if index == from
+      return index - 1 if from < to && index.between?(from + 1, to)
+      return index + 1 if to < from && index.between?(to, from - 1)
+
+      index
+    end
+
+    def remove_from_shuffle(index)
+      return unless @shuffle_mode
+      return enable_shuffle if @shuffle_indices.length != @tracks.length + 1
+
+      @shuffle_indices.delete(index)
+      @shuffle_indices.map! { |other| other > index ? other - 1 : other }
+      @shuffle_position = @shuffle_indices.index(@current_index) || 0
     end
 
     # Walks the play order by +offset+ positions. In shuffle mode the order is

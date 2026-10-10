@@ -184,10 +184,7 @@ module Loamp
       end
 
       def play_track_at(position)
-        return unless @playlist.set_current_track(position)
-
-        @player.stop
-        @player.play
+        @player.play_index(position)
       end
 
       # GTK4 has no Gtk::Menu; a popover anchored to the click is the

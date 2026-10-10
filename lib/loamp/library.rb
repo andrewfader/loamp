@@ -225,7 +225,7 @@ module Loamp
     def artists
       database.execute(<<~SQL).map do |row|
         SELECT #{ALBUM_ARTIST} AS name,
-               COUNT(DISTINCT album) AS albums,
+               COUNT(DISTINCT COALESCE(album, '')) AS albums,
                COUNT(*) AS tracks
         FROM tracks
         GROUP BY #{ALBUM_ARTIST} COLLATE NOCASE

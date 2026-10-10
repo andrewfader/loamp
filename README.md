@@ -27,9 +27,11 @@ A music player built with Ruby, GTK4 and libadwaita for Linux.
 - An indexed local library: folders are scanned on a background thread into a
   SQLite database with full-text search, so browsing and searching stay instant
 - Virtualised playlist that stays responsive at any size
-- Playlist management with shuffle and repeat modes
+- Playlist management with shuffle and repeat modes; a track that will not
+  play is reported and skipped rather than ending the queue
 - Standard M3U/M3U8 playlist import and export
-- Volume with a perceptual (cubic) curve, and mute
+- Volume with a perceptual (cubic) curve, and mute; volume, shuffle and
+  repeat are remembered between launches
 - Internet-radio discovery through Radio Browser, with live ICY song-title
   updates, favorites, history, and directory-server failover
 - Synced embedded/sidecar/LRCLIB lyrics, podcasts with resume and downloads,
@@ -178,8 +180,9 @@ LOAMP_LASTFM_SESSION_KEY=session ruby loamp.rb
 
 Credentials stay in the process environment and are not written into the
 library database. Playback processing choices are available from the main
-menu and persist between launches; changing crossfade takes effect on the next
-launch because it selects a different GStreamer engine.
+menu, where the current choice is marked, and persist between launches;
+changing crossfade takes effect on the next launch because it selects a
+different GStreamer engine.
 
 ### Controlling it from the desktop
 
@@ -225,7 +228,7 @@ root is safe to delete; it is rebuilt on demand.
 | `$XDG_DATA_HOME/loamp/library.db` | The indexed local collection |
 | `$XDG_DATA_HOME/loamp/podcasts.db` | Subscriptions, episodes, resume points |
 | `$XDG_DATA_HOME/loamp/radio.json` | Station favorites and history |
-| `$XDG_CONFIG_HOME/loamp/playback.json` | ReplayGain, EQ and crossfade choices |
+| `$XDG_CONFIG_HOME/loamp/playback.json` | ReplayGain, EQ, crossfade, volume, shuffle and repeat |
 | `$XDG_CACHE_HOME/loamp/art/` | Downloaded cover art, keyed by album |
 | `$XDG_CACHE_HOME/loamp/lyrics/` | Lyrics fetched from LRCLIB |
 | `$XDG_CACHE_HOME/loamp/radio-graph.db` | The similar-artist graph |

@@ -8,9 +8,12 @@ module Loamp
   # back field-by-field so adding a preference never makes LOAMP unstartable.
   class PlaybackSettings
     REPLAYGAIN_MODES = %i[off track album].freeze
-    DEFAULTS = { replaygain_mode: :track, eq_preset: :flat, crossfade_seconds: 0.0 }.freeze
+    REPEAT_MODES = %i[off all one].freeze
+    DEFAULTS = { replaygain_mode: :track, eq_preset: :flat, crossfade_seconds: 0.0,
+                 volume: 100, shuffle: false, repeat_mode: :off }.freeze
 
-    attr_reader :path, :replaygain_mode, :eq_preset, :crossfade_seconds
+    attr_reader :path, :replaygain_mode, :eq_preset, :crossfade_seconds, :volume,
+                :repeat_mode
 
     def initialize(path: self.class.default_path)
       @path = path
@@ -39,6 +42,23 @@ module Loamp
       @crossfade_seconds = seconds.to_f.clamp(0, 12)
     end
 
+    # The listener's volume survives a restart: a player that comes back at
+    # full blast every launch is a player that gets muted before it is used.
+    def volume=(level)
+      @volume = level.to_i.clamp(0, 100)
+    end
+
+    def shuffle? = @shuffle
+
+    def shuffle=(enabled)
+      @shuffle = enabled == true
+    end
+
+    def repeat_mode=(mode)
+      candidate = mode.to_s.to_sym
+      @repeat_mode = REPEAT_MODES.include?(candidate) ? candidate : DEFAULTS[:repeat_mode]
+    end
+
     def save
       FileUtils.mkdir_p(File.dirname(@path))
       temporary = "#{@path}.#{Process.pid}.tmp"
@@ -51,20 +71,24 @@ module Loamp
 
     def to_h
       { replaygain_mode: @replaygain_mode, eq_preset: @eq_preset,
-        crossfade_seconds: @crossfade_seconds }
+        crossfade_seconds: @crossfade_seconds, volume: @volume,
+        shuffle: @shuffle, repeat_mode: @repeat_mode }
     end
 
     private
 
     def load
       fields = JSON.parse(File.read(@path), symbolize_names: true)
-      self.replaygain_mode = fields.fetch(:replaygain_mode, DEFAULTS[:replaygain_mode])
-      self.eq_preset = fields.fetch(:eq_preset, DEFAULTS[:eq_preset])
-      self.crossfade_seconds = fields.fetch(:crossfade_seconds, DEFAULTS[:crossfade_seconds])
+      fields = {} unless fields.is_a?(Hash)
+      apply(fields)
     rescue JSON::ParserError, SystemCallError, TypeError
-      self.replaygain_mode = DEFAULTS[:replaygain_mode]
-      self.eq_preset = DEFAULTS[:eq_preset]
-      self.crossfade_seconds = DEFAULTS[:crossfade_seconds]
+      apply({})
+    end
+
+    def apply(fields)
+      DEFAULTS.each do |name, default|
+        public_send("#{name}=", fields.fetch(name, default))
+      end
     end
   end
 end

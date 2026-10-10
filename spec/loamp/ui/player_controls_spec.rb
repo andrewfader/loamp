@@ -211,24 +211,42 @@ RSpec.describe Loamp::UI::PlayerControls do
   describe 'progress scale functionality' do
     let(:controls) { described_class.new(player) }
 
-    it 'seeks player position when scale is clicked' do
+    # The scale's change-value signal is what every user-driven movement --
+    # a drag, a click in the trough, the keyboard -- goes through, and what
+    # the engine's own position updates do not.
+    it 'seeks player position when the user moves the scale' do
       start_real_playback
       controls.send(:update_controls)
       progress_scale = controls.instance_variable_get(:@progress_scale)
       expect(progress_scale).to be_a(Gtk::Scale)
       expect(progress_scale.sensitive?).to be(true)
 
-      # Hold @seeking so a position tick cannot overwrite the scale before release.
-      controls.instance_variable_set(:@seeking, true)
       progress_scale.adjustment.upper = 180
-      progress_scale.value = 60
       allow(player).to receive(:seek)
+      allow(player).to receive(:duration).and_return(180.0)
 
-      seek_gesture = progress_scale.observe_controllers.find { |c| c.is_a?(Gtk::GestureClick) }
-      expect(seek_gesture).to be_a(Gtk::GestureClick)
-      seek_gesture.signal_emit('released', 1, 0, 0)
+      progress_scale.signal_emit('change-value', Gtk::ScrollType::JUMP, 60.0)
+      expect(controls.instance_variable_get(:@seeking)).to be(true)
+      wait_until(timeout: 2) { !controls.instance_variable_get(:@seeking) }
 
       expect(player).to have_received(:seek).with(a_value_within(0.01).of(60))
+      expect(controls.instance_variable_get(:@position_label).text).to eq('1:00')
+    end
+
+    it 'coalesces a drag into one seek at the position it ended on' do
+      start_real_playback
+      controls.send(:update_controls)
+      progress_scale = controls.instance_variable_get(:@progress_scale)
+      progress_scale.adjustment.upper = 180
+      allow(player).to receive(:seek)
+      allow(player).to receive(:duration).and_return(180.0)
+
+      [20.0, 40.0, 75.0].each do |value|
+        progress_scale.signal_emit('change-value', Gtk::ScrollType::JUMP, value)
+      end
+      wait_until(timeout: 2) { !controls.instance_variable_get(:@seeking) }
+
+      expect(player).to have_received(:seek).once.with(a_value_within(0.01).of(75))
     end
 
     it 'lets the user seek while paused, but not while stopped' do

@@ -52,7 +52,9 @@ RSpec.describe Loamp::CrossfadeEngine do
     it 'has nothing to cycle when the visualizer plugin has no presets' do
       skip 'no visualization plugin installed' unless engine.visualizer_name
 
-      expect(engine.visualizer_presets.paths).to be_empty
+      # Preset files may well be installed on the machine; what matters is
+      # that a plugin without a preset property has nothing to switch.
+      expect(engine.visualizer_presets?).to be(false)
       expect(engine.next_visualizer_preset).to be_nil
     end
 

@@ -52,9 +52,7 @@ module Loamp
         return false unless station
 
         track = @playlist.add_station(station)
-        @playlist.set_current_track(@playlist.size - 1)
-        @player.stop
-        @player.play
+        @player.play_index(@playlist.size - 1)
         @callbacks[:playlist_changed]&.call
         @callbacks[:notify]&.call("Playing #{station.name}")
         @store.played(station)
@@ -119,16 +117,24 @@ module Loamp
         @status.xalign = 0
         @status.add_css_class('dim-label')
 
-        toolbar = Gtk::Box.new(:horizontal, 6)
+        # The buttons wrap under the search field when the page is narrow;
+        # in one row they alone pushed the window past its own width.
+        toolbar = Adw::WrapBox.new
+        toolbar.child_spacing = 6
+        toolbar.line_spacing = 6
         toolbar.margin_top = 12
         toolbar.margin_bottom = 6
         toolbar.margin_start = 12
         toolbar.margin_end = 12
-        toolbar.append(@search_entry)
-        toolbar.append(button)
-        toolbar.append(popular)
-        toolbar.append(favorites)
-        toolbar.append(recent)
+        search_row = Gtk::Box.new(:horizontal, 6)
+        search_row.hexpand = true
+        search_row.append(@search_entry)
+        search_row.append(button)
+        toolbar.append(search_row)
+        filters = Gtk::Box.new(:horizontal, 0)
+        filters.add_css_class('linked')
+        [popular, favorites, recent].each { |child| filters.append(child) }
+        toolbar.append(filters)
         toolbar.append(@spinner)
         append(toolbar)
         append(@status)

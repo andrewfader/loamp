@@ -141,6 +141,10 @@ module Loamp
     # every time it is played.
     def fetch_remote(track, &on_resolved)
       return false unless track&.file_path
+      # A radio station or a podcast episode is not an album MusicBrainz
+      # knows; searching the Cover Art Archive for "pop" by "Germany" is
+      # a wasted request at best.
+      return false if track.respond_to?(:remote?) && track.remote?
       return false if @detached || url_for(track)
       # Nothing to look anything up by. A search on an empty album title
       # matches everything and means nothing.

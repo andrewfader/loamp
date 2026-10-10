@@ -85,6 +85,27 @@ module Loamp
       false
     end
 
+    # Must be called once the pipeline is in NULL and before it is started
+    # again. playsink frees its visualisation chain on the way to NULL, but
+    # it does not take a custom vis element out of that chain's bin first;
+    # the bin stays alive as long as anything still references it, so the
+    # plugin and the paintable sink are left parented to a dead bin with its
+    # bus still set. Starting the pipeline again then trips
+    # `g_assert (!element_bus)` inside playsink and the whole process aborts
+    # -- which is what the Visualizer page did on the very next track.
+    def prepare_for_reload
+      [@plugin, @video_sink].compact.each do |element|
+        parent = element.parent
+        next unless parent
+
+        element.set_state(Gst::State::NULL)
+        parent.remove(element)
+      end
+      true
+    rescue StandardError
+      false
+    end
+
     private
 
     def plugin

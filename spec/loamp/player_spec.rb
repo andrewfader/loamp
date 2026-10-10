@@ -5,7 +5,7 @@ require 'spec_helper'
 RSpec.describe Loamp::Player do
   # Real playback through a real pipeline, silenced at the sink. Nothing here
   # is stubbed, so a passing spec means audio genuinely played.
-  let(:engine) { Loamp::AudioEngine.new(audio_sink: 'fakesink sync=true') }
+  let(:engine) { AudioFixtures.silent_engine }
   let(:player) { described_class.new(playlist, engine: engine) }
 
   let(:playlist) do

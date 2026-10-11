@@ -173,9 +173,7 @@ module Loamp
       # narrow. Side by side they needed seven hundred pixels, which is more
       # than the whole content pane has at the default window size.
       def toolbar_for(groups)
-        toolbar = Adw::WrapBox.new
-        toolbar.child_spacing = 6
-        toolbar.line_spacing = 6
+        toolbar = WrapBox.new
         toolbar.margin_top = 12
         toolbar.margin_start = 12
         toolbar.margin_end = 12

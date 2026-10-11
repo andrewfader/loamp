@@ -119,9 +119,7 @@ module Loamp
 
         # The buttons wrap under the search field when the page is narrow;
         # in one row they alone pushed the window past its own width.
-        toolbar = Adw::WrapBox.new
-        toolbar.child_spacing = 6
-        toolbar.line_spacing = 6
+        toolbar = WrapBox.new
         toolbar.margin_top = 12
         toolbar.margin_bottom = 6
         toolbar.margin_start = 12

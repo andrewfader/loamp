@@ -44,8 +44,11 @@ module Loamp
     def initialize(audio_sink: nil, settings: PlaybackSettings.new)
       # Requiring 'gst' initializes GStreamer; an explicit Gst.init is neither
       # needed nor callable from ruby-gnome.
-      @pipeline = Gst::ElementFactory.make('playbin3', 'loamp-playbin')
-      raise 'GStreamer playbin3 element is unavailable' unless @pipeline
+      # playbin, not playbin3: playbin3 can hang for good in a state change
+      # (stop, or any move down to READY) that lands while it is still
+      # switching to the uri queued from about-to-finish.
+      @pipeline = Gst::ElementFactory.make('playbin', 'loamp-playbin')
+      raise 'GStreamer playbin element is unavailable' unless @pipeline
 
       @bus = @pipeline.bus
       @uri = nil
@@ -145,7 +148,15 @@ module Loamp
       target = [seconds.to_f, 0.0].max
       target = [target, duration].min if duration.positive?
 
-      @pipeline.seek_simple(Gst::Format::TIME, SEEK_FLAGS, (target * NANOS_PER_SECOND).round)
+      # Not seek_simple: Ruby-GNOME holds the GVL through that call, and a
+      # flushing seek waits on the streaming thread. If about-to-finish fires
+      # meanwhile, its Ruby handler needs the GVL and the two deadlock.
+      # send_event is one of the calls that releases the GVL.
+      @pipeline.send_event(
+        Gst::Event.new(1.0, Gst::Format::TIME, SEEK_FLAGS,
+                       Gst::SeekType::SET, (target * NANOS_PER_SECOND).round,
+                       Gst::SeekType::NONE, -1),
+      )
       settle
     end
 

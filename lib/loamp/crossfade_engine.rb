@@ -112,7 +112,13 @@ module Loamp
 
     def seek(seconds)
       target = seconds.to_f.clamp(0, duration.positive? ? duration : Float::INFINITY)
-      current.seek_simple(Gst::Format::TIME, SEEK_FLAGS, (target * NANOS_PER_SECOND).round)
+      # send_event rather than seek_simple so the flushing seek releases the
+      # GVL; see AudioEngine#seek.
+      current.send_event(
+        Gst::Event.new(1.0, Gst::Format::TIME, SEEK_FLAGS,
+                       Gst::SeekType::SET, (target * NANOS_PER_SECOND).round,
+                       Gst::SeekType::NONE, -1),
+      )
     end
 
     def volume=(level)

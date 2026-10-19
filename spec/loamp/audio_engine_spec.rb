@@ -141,6 +141,11 @@ RSpec.describe Loamp::AudioEngine do
       engine.play
       engine.wait_for_state(:playing, timeout: 5)
 
+      # An MP3's duration is estimated a moment after playback starts.
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 5
+      sleep 0.02 until engine.duration.positive? ||
+                       Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+
       expect(engine.duration).to be_within(0.5).of(110.4)
     end
 

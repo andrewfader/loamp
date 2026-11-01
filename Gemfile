@@ -13,7 +13,7 @@ gem 'gstreamer', '~> 4.3'
 gem 'taglib-ruby', '~> 2.0'
 
 # Library index. Needs an SQLite built with FTS5, which the packaged gem is.
-gem 'sqlite3', '~> 2.0'
+gem 'sqlite3', '~> 2.10'
 
 # Standards-compliant RSS/Atom and OPML parsing for podcast subscriptions.
 gem 'rexml', '~> 3.4'
